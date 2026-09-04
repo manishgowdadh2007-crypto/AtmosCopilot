@@ -19,16 +19,16 @@ export default function SatelliteView({ coords, weather }) {
 
   return (
     <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none">
-      {/* 1. Live Interactive Satellite Map (Cropped bottom to hide native branding) */}
+      {/* 1. Scaled & Offset Iframe: Pushes top header watermark and bottom edges completely outside view boundary */}
       <iframe
         title="Live Satellite Telemetry"
         src={embedUrl}
-        className="w-full h-[calc(100%+45px)] -mb-[45px] border-0 filter saturate-[1.1] contrast-[1.05]"
+        className="absolute -top-12 -left-2 w-[calc(100%+16px)] h-[calc(100%+100px)] border-0 filter saturate-[1.1] contrast-[1.05]"
         allow="geolocation"
       />
 
-      {/* 2. Watermark Cover Shield */}
-      <div className="absolute bottom-0 left-0 w-44 h-12 bg-[#05070e] z-10 pointer-events-none opacity-95 backdrop-blur-md" />
+      {/* 2. Top-Right Corner Shield: Completely blocks any lingering logo badge */}
+      <div className="absolute top-0 right-0 w-48 h-14 bg-gradient-to-b from-[#080b14] via-[#080b14]/70 to-transparent pointer-events-none z-10" />
 
       {/* 3. Floating Left Layers Menu */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-2.5 rounded-2xl shadow-2xl">
