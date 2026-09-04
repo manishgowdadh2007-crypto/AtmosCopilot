@@ -1,21 +1,31 @@
 import React from 'react';
-import { Sun } from 'lucide-react';
 
-export default function SunAvatar({ isListening }) {
+export default function SunAvatar({ isListening, className = "w-16 h-16" }) {
   return (
-    <div className="flex flex-col items-center justify-center my-auto">
-      <div className="relative flex items-center justify-center">
-        {/* Glow Corona Waves */}
-        <div className="absolute w-48 h-48 rounded-full bg-amber-500/20 blur-2xl animate-ping duration-1000"></div>
-        <div className="absolute w-36 h-36 rounded-full bg-amber-400/30 blur-lg animate-pulse"></div>
-
-        {/* Sun Core Avatar */}
-        <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-amber-500 via-orange-400 to-yellow-200 shadow-[0_0_50px_rgba(245,158,11,0.6)] flex items-center justify-center z-10 transition-transform duration-300 hover:scale-105">
-          <Sun className={`w-14 h-14 text-slate-950 ${isListening ? 'animate-[spin_4s_linear_infinite]' : ''}`} />
-        </div>
+    <div className={`relative flex items-center justify-center ${className}`}>
+      <div className={`absolute inset-0 rounded-full bg-amber-500/20 blur-xl ${isListening ? 'animate-ping' : 'animate-pulse'}`} />
+      <div className="relative w-full h-full rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center shadow-lg shadow-amber-500/30">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-1/2 h-1/2 text-slate-950"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2" />
+          <path d="M12 20v2" />
+          <path d="m4.93 4.93 1.41 1.41" />
+          <path d="m17.66 17.66 1.41 1.41" />
+          <path d="M2 12h2" />
+          <path d="M20 12h2" />
+          <path d="m6.34 17.66-1.41 1.41" />
+          <path d="m19.07 4.93-1.41 1.41" />
+        </svg>
       </div>
-      <h2 className="mt-6 font-bold text-lg text-amber-200">Sun Copilot Intelligence</h2>
-      <p className="text-xs text-slate-400">Strictly streaming live, verified atmospheric telemetry.</p>
     </div>
   );
 }
