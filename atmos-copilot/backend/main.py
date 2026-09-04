@@ -13,6 +13,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/api/weather-telemetry")
 async def get_weather_telemetry(
     lat: Optional[float] = Query(None),
