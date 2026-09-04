@@ -7,7 +7,6 @@ export default function SatelliteView({ coords, weather }) {
   const lat = coords?.lat || 12.9716;
   const lon = coords?.lon || 77.5946;
 
-  // Zoom Earth / Windy interactive embed centered on dynamic coordinates
   const embedUrl = `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=8&overlay=${
     activeLayer === "radar"
       ? "radar"
@@ -20,15 +19,18 @@ export default function SatelliteView({ coords, weather }) {
 
   return (
     <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none">
-      {/* 1. Live Interactive Satellite Map Canvas */}
+      {/* 1. Live Interactive Satellite Map (Cropped bottom to hide native branding) */}
       <iframe
         title="Live Satellite Telemetry"
         src={embedUrl}
-        className="w-full h-full border-0 filter saturate-[1.1] contrast-[1.05]"
+        className="w-full h-[calc(100%+45px)] -mb-[45px] border-0 filter saturate-[1.1] contrast-[1.05]"
         allow="geolocation"
       />
 
-      {/* 2. Floating Left Layers Menu (Zoom Earth Style) */}
+      {/* 2. Watermark Cover Shield */}
+      <div className="absolute bottom-0 left-0 w-44 h-12 bg-[#05070e] z-10 pointer-events-none opacity-95 backdrop-blur-md" />
+
+      {/* 3. Floating Left Layers Menu */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-2.5 rounded-2xl shadow-2xl">
         <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1">
           Live Maps
@@ -75,47 +77,47 @@ export default function SatelliteView({ coords, weather }) {
         </button>
       </div>
 
-      {/* 3. Floating Right Telemetry Card */}
-      <div className="hidden sm:flex absolute top-4 right-4 z-20 flex-col bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-4 rounded-2xl shadow-2xl w-60">
+      {/* 4. Target Coordinates Card (Positioned at Bottom Right) */}
+      <div className="absolute bottom-5 right-5 z-20 flex flex-col bg-[#0c101c]/95 backdrop-blur-md border border-slate-700/70 p-4 rounded-2xl shadow-2xl w-64">
         <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-700/60 pb-2">
           <span>Target Coordinates</span>
-          <span className="text-emerald-400 font-mono text-[10px]">LIVE SYNC</span>
+          <span className="text-emerald-400 font-mono text-[10px] tracking-wider">LIVE SYNC</span>
         </div>
-        <div className="font-semibold text-white text-sm mt-2">
-          {weather?.resolved_city || "Bengaluru Station"}
+        <div className="font-semibold text-white text-sm mt-2 truncate">
+          {weather?.resolved_city || "Jalahalli, Karnataka"}
         </div>
         <div className="font-mono text-xs text-slate-400 mt-0.5">
           {lat.toFixed(4)}°N, {lon.toFixed(4)}°E
         </div>
-        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-800 text-xs">
+        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-800 text-xs">
           <div>
-            <span className="text-[10px] text-slate-400 block">TEMP</span>
-            <span className="text-amber-400 font-mono font-bold text-sm">
-              {weather?.current?.temp || 26}°C
+            <span className="text-[10px] text-slate-400 block font-medium">TEMP</span>
+            <span className="text-amber-400 font-mono font-bold text-base">
+              {weather?.current?.temp ?? 25}°C
             </span>
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 block">WIND</span>
-            <span className="text-white font-mono font-bold text-sm">
-              {weather?.current?.wind || 18} km/h
+            <span className="text-[10px] text-slate-400 block font-medium">WIND</span>
+            <span className="text-white font-mono font-bold text-base">
+              {weather?.current?.wind ?? 18} km/h
             </span>
           </div>
         </div>
       </div>
 
-      {/* 4. Bottom Timeline Scrub Bar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
+      {/* 5. Bottom Timeline Scrub Bar */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 hidden md:flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
         <button
           onClick={() => setIsPlaying(!isPlaying)}
-          className="w-8 h-8 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center justify-center shadow-md transition"
+          className="w-7 h-7 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center justify-center shadow-md transition"
         >
           {isPlaying ? "⏸" : "▶"}
         </button>
-        <span className="font-mono text-slate-300">Live Satellite Loop</span>
-        <div className="w-24 sm:w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <span className="font-mono text-slate-300 text-[11px]">Live Loop</span>
+        <div className="w-28 sm:w-36 h-1.5 bg-slate-800 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-3/4 animate-pulse" />
         </div>
-        <span className="text-[11px] font-mono text-amber-400">10-min Delay</span>
+        <span className="text-[10px] font-mono text-amber-400">Synced</span>
       </div>
     </div>
   );
