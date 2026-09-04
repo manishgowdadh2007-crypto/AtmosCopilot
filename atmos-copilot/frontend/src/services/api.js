@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8000/api';
+const BASE_URL = 'https://atmoscopilot-backend.onrender.com/api';
 
 export const registerUser = async (userData) => {
   const res = await fetch(`${BASE_URL}/register`, {
