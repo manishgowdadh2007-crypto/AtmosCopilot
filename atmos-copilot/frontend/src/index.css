@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes floatParticle {
+  0% { transform: translateY(-10px) translateX(0px); opacity: 0.2; }
+  50% { transform: translateY(120px) translateX(25px); opacity: 0.6; }
+  100% { transform: translateY(240px) translateX(50px); opacity: 0; }
+}
+
+.particle {
+  position: absolute;
+  width: 2px;
+  height: 60px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.4), transparent);
+  transform: rotate(15deg);
+  animation: floatParticle 3.5s linear infinite;
+}
