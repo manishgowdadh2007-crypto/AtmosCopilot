@@ -6,13 +6,14 @@ import AuthModal from './components/onboarding/AuthModal';
 import SunAvatar from './components/copilot/SunAvatar';
 import ChatStream from './components/copilot/ChatStream';
 import ChatInput from './components/copilot/ChatInput';
-import { fetchWeatherTelemetry, sendAIChatQuery } from './services/api';
+import { fetchWeatherTelemetry, reverseGeocodeCoordinates, sendAIChatQuery } from './services/api';
 
 export default function App() {
   const [stage, setStage] = useState('splash');
   const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'satellite' | 'copilot'
   const [coords, setCoords] = useState(null);
   const [weather, setWeather] = useState(null);
+  const [user, setUser] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeMetric, setActiveMetric] = useState('temp');
@@ -20,36 +21,48 @@ export default function App() {
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
 
-  // High-precision live GPS polling and continuous telemetry synchronization
+  // Synchronize precise location and hyper-local telemetry
+  const syncTelemetryLocation = async (lat, lon) => {
+    // 1. Resolve exact micro-neighborhood (e.g., Vijayanagar, Bengaluru)
+    const exactName = await reverseGeocodeCoordinates(lat, lon);
+    
+    // 2. Fetch weather payload carrying the exact neighborhood label
+    try {
+      const data = await fetchWeatherTelemetry(lat, lon, exactName);
+      setWeather(data);
+    } catch (err) {
+      console.error("Telemetry sync failed:", err);
+    }
+  };
+
   useEffect(() => {
     if (navigator.geolocation && !coords) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const freshCoords = {
+          const accurateCoords = {
             lat: parseFloat(pos.coords.latitude.toFixed(6)),
-            lon: parseFloat(pos.coords.longitude.toFixed(6))
+            lon: parseFloat(pos.coords.longitude.toFixed(6)),
           };
-          setCoords(freshCoords);
-          fetchWeatherTelemetry(freshCoords.lat, freshCoords.lon)
-            .then(data => setWeather(data))
-            .catch(err => console.error("Telemetry link error:", err));
+          setCoords(accurateCoords);
+          syncTelemetryLocation(accurateCoords.lat, accurateCoords.lon);
         },
         () => {
           // Soft fallback coordinates if permission is denied or pending
-          fetchWeatherTelemetry(12.9716, 77.5946).then(data => setWeather(data));
+          setCoords({ lat: 12.9716, lon: 77.5946 });
+          syncTelemetryLocation(12.9716, 77.5946);
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
     } else if (coords) {
-      fetchWeatherTelemetry(coords.lat, coords.lon)
-        .then(data => setWeather(data))
-        .catch(err => console.error("Telemetry link error:", err));
+      syncTelemetryLocation(coords.lat, coords.lon);
     }
   }, [coords]);
 
-  const handleAuthorized = (retrievedCoords) => {
+  const handleAuthorized = (retrievedCoords, userData) => {
     setCoords(retrievedCoords);
+    if (userData) setUser(userData);
     setStage('app');
+    syncTelemetryLocation(retrievedCoords.lat, retrievedCoords.lon);
   };
 
   const handleSendMessage = async (queryText) => {
@@ -75,8 +88,8 @@ export default function App() {
   }
 
   // Dynamic telemetry fallbacks
-  const cur = weather?.current || { temp: 26, condition: "Partly Cloudy", precipitation: 18, humidity: 60, wind: 20 };
-  const city = weather?.resolved_city || "Bengaluru, Karnataka";
+  const cur = weather?.current || { temp: 25, condition: "Partly Cloudy", precipitation: 18, humidity: 60, wind: 18 };
+  const city = weather?.resolved_city || "Detecting micro-locality...";
   const hourly = weather?.hourly?.length ? weather.hourly : [
     { time: "12 am", temp: 21, precip: 10, wind: 12 },
     { time: "3 am", temp: 20, precip: 15, wind: 10 },
@@ -113,6 +126,7 @@ export default function App() {
         <Header 
           weather={weather}
           coords={coords}
+          user={user}
           currentPage={currentPage} 
           setCurrentPage={setCurrentPage} 
         />
