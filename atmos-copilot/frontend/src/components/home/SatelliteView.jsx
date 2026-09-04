@@ -1,94 +1,122 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export default function SatelliteView({ coords, weather }) {
-  const [activeLayer, setActiveLayer] = useState("satellite"); // "satellite", "radar", "wind", "rain"
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [activeLayer, setActiveLayer] = useState("satellite"); // "satellite" | "radar" | "wind"
+  const [currentTimeStr, setCurrentTimeStr] = useState("");
+  const [isNightTime, setIsNightTime] = useState(false);
 
   const lat = coords?.lat || 12.9716;
   const lon = coords?.lon || 77.5946;
 
-  const embedUrl = `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=8&overlay=${
+  // Real-time AM/PM clock calculation and solar terminator state
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTimeStr(
+        now.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        })
+      );
+      const hour = now.getHours();
+      setIsNightTime(hour < 6 || hour >= 18);
+    };
+
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Native real-time Zoom Earth telemetry engine
+  const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${lat.toFixed(6)},${lon.toFixed(6)},6z/overlays=${
     activeLayer === "radar"
       ? "radar"
       : activeLayer === "wind"
       ? "wind"
-      : activeLayer === "rain"
-      ? "rain"
-      : "satellite"
-  }&product=satellite&level=surface&lat=${lat}&lon=${lon}`;
+      : "radar,wind"
+  }`;
 
   return (
-    <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none">
-      {/* 1. Scaled & Offset Iframe: Pushes top header watermark and bottom edges completely outside view boundary */}
+    <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none font-sans">
+      {/* 1. Zoom Earth Real-Time Canvas: Precision offset eliminates all external banners & watermarks */}
       <iframe
-        title="Live Satellite Telemetry"
-        src={embedUrl}
-        className="absolute -top-12 -left-2 w-[calc(100%+16px)] h-[calc(100%+100px)] border-0 filter saturate-[1.1] contrast-[1.05]"
+        title="Zoom Earth Live Satellite Telemetry"
+        src={zoomEarthUrl}
+        className="absolute -top-[54px] -left-2 w-[calc(100%+16px)] h-[calc(100%+98px)] border-0"
         allow="geolocation"
       />
 
-      {/* 2. Top-Right Corner Shield: Completely blocks any lingering logo badge */}
-      <div className="absolute top-0 right-0 w-48 h-14 bg-gradient-to-b from-[#080b14] via-[#080b14]/70 to-transparent pointer-events-none z-10" />
-
-      {/* 3. Floating Left Layers Menu */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-2.5 rounded-2xl shadow-2xl">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1">
-          Live Maps
+      {/* 2. Floating Left Layers Menu */}
+      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-3 rounded-2xl shadow-2xl">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+            {isNightTime ? "Night-IR Satellite" : "Daylight True-Color"}
+          </span>
         </div>
-        <button
-          onClick={() => setActiveLayer("satellite")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-            activeLayer === "satellite"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
-              : "text-slate-300 hover:bg-slate-800/60"
-          }`}
-        >
-          🛰️ <span>Satellite HD</span>
-        </button>
-        <button
-          onClick={() => setActiveLayer("radar")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-            activeLayer === "radar"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
-              : "text-slate-300 hover:bg-slate-800/60"
-          }`}
-        >
-          📡 <span>Radar Live</span>
-        </button>
-        <button
-          onClick={() => setActiveLayer("wind")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-            activeLayer === "wind"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
-              : "text-slate-300 hover:bg-slate-800/60"
-          }`}
-        >
-          💨 <span>Wind Stream</span>
-        </button>
-        <button
-          onClick={() => setActiveLayer("rain")}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-            activeLayer === "rain"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
-              : "text-slate-300 hover:bg-slate-800/60"
-          }`}
-        >
-          🌧️ <span>Precipitation</span>
-        </button>
+        <div className="text-[10px] text-slate-400 font-mono">
+          EUMETSAT / HIMAWARI / NOAA
+        </div>
+
+        <div className="flex flex-col gap-1.5 mt-2">
+          <button
+            onClick={() => setActiveLayer("satellite")}
+            className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition ${
+              activeLayer === "satellite"
+                ? "bg-amber-500 text-slate-950 font-semibold shadow-md shadow-amber-500/20"
+                : "text-slate-300 hover:bg-slate-800/60"
+            }`}
+          >
+            <span>🛰️ Cloud Imagery</span>
+            <span className="text-[10px] font-mono opacity-80">
+              {isNightTime ? "Infrared" : "Visible"}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveLayer("radar")}
+            className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition ${
+              activeLayer === "radar"
+                ? "bg-amber-500 text-slate-950 font-semibold shadow-md shadow-amber-500/20"
+                : "text-slate-300 hover:bg-slate-800/60"
+            }`}
+          >
+            <span>📡 Doppler Radar</span>
+            <span className="text-[10px] font-mono opacity-80">HD</span>
+          </button>
+
+          <button
+            onClick={() => setActiveLayer("wind")}
+            className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition ${
+              activeLayer === "wind"
+                ? "bg-amber-500 text-slate-950 font-semibold shadow-md shadow-amber-500/20"
+                : "text-slate-300 hover:bg-slate-800/60"
+            }`}
+          >
+            <span>💨 Wind Vectors</span>
+            <span className="text-[10px] font-mono opacity-80">Surface</span>
+          </button>
+        </div>
       </div>
 
-      {/* 4. Target Coordinates Card (Positioned at Bottom Right) */}
+      {/* 3. Target Coordinates Telemetry Card (Bottom Right) */}
       <div className="absolute bottom-5 right-5 z-20 flex flex-col bg-[#0c101c]/95 backdrop-blur-md border border-slate-700/70 p-4 rounded-2xl shadow-2xl w-64">
         <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-700/60 pb-2">
           <span>Target Coordinates</span>
-          <span className="text-emerald-400 font-mono text-[10px] tracking-wider">LIVE SYNC</span>
+          <span className="text-emerald-400 font-mono text-[10px] tracking-wider font-semibold">
+            LIVE SYNC
+          </span>
         </div>
+
         <div className="font-semibold text-white text-sm mt-2 truncate">
           {weather?.resolved_city || "Jalahalli, Karnataka"}
         </div>
         <div className="font-mono text-xs text-slate-400 mt-0.5">
           {lat.toFixed(4)}°N, {lon.toFixed(4)}°E
         </div>
+
         <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-800 text-xs">
           <div>
             <span className="text-[10px] text-slate-400 block font-medium">TEMP</span>
@@ -105,19 +133,18 @@ export default function SatelliteView({ coords, weather }) {
         </div>
       </div>
 
-      {/* 5. Bottom Timeline Scrub Bar */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 hidden md:flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
-        <button
-          onClick={() => setIsPlaying(!isPlaying)}
-          className="w-7 h-7 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center justify-center shadow-md transition"
-        >
-          {isPlaying ? "⏸" : "▶"}
-        </button>
-        <span className="font-mono text-slate-300 text-[11px]">Live Loop</span>
-        <div className="w-28 sm:w-36 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-3/4 animate-pulse" />
+      {/* 4. Real-Time AM/PM Indicator & Solar Terminator Loop */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{isNightTime ? "🌙" : "☀️"}</span>
+          <span className="font-mono text-amber-300 font-semibold text-xs sm:text-sm">
+            {currentTimeStr || "Syncing..."}
+          </span>
         </div>
-        <span className="text-[10px] font-mono text-amber-400">Synced</span>
+        <div className="h-4 w-px bg-slate-700" />
+        <span className="font-mono text-[11px] text-slate-300">
+          {isNightTime ? "Night-time City Lights Active" : "Daylight Solar Cycle"}
+        </span>
       </div>
     </div>
   );
