@@ -1,9 +1,9 @@
-from pydantic import BaseModel
-import re
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import httpx
+import re
 
 app = FastAPI(title="AtmosCopilot Backend Engine", version="1.0.0")
 
@@ -26,33 +26,38 @@ async def get_weather_telemetry(
     lon: Optional[float] = Query(None),
     city: Optional[str] = Query(None)
 ):
-    headers = {"User-Agent": "AtmosCopilot/1.0 (weather-app)"}
-    target_lat = lat
-    target_lon = lon
-    resolved_name = "Target Area"
+    headers = {"User-Agent": "AtmosCopilot/1.0 (weather-application)"}
+    target_lat = None
+    target_lon = None
+    resolved_name = None
 
     async with httpx.AsyncClient(timeout=12.0) as client:
-        # 1. If city name was passed, resolve coordinates via geocoding
-        if city:
-            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
+        # 1. Geocode place name if specified
+        if city and city.strip():
+            clean_city = city.strip()
+            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={clean_city}&count=1&language=en&format=json"
             try:
                 geo_res = await client.get(geo_url, headers=headers)
                 geo_data = geo_res.json()
                 if geo_data.get("results"):
                     target_lat = geo_data["results"][0]["latitude"]
                     target_lon = geo_data["results"][0]["longitude"]
-                    city_name = geo_data["results"][0].get("name", city)
+                    name = geo_data["results"][0].get("name", clean_city)
                     country = geo_data["results"][0].get("country", "")
-                    resolved_name = f"{city_name}, {country}".strip(", ")
+                    resolved_name = f"{name}, {country}".strip(", ")
             except Exception:
                 pass
 
-        # 2. Fallback coordinates if neither coords nor valid city resolved
+        # 2. Fall back to supplied coordinates or default region
         if target_lat is None or target_lon is None:
-            target_lat, target_lon = 12.96, 77.56
-            resolved_name = "Bengaluru, India"
+            if lat is not None and lon is not None:
+                target_lat, target_lon = lat, lon
+                resolved_name = resolved_name or "Local Area"
+            else:
+                target_lat, target_lon = 12.9716, 77.5946
+                resolved_name = "Bengaluru, India"
 
-        # 3. Fetch telemetry for target coordinates
+        # 3. Retrieve forecast telemetry
         forecast_url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": target_lat,
@@ -70,22 +75,22 @@ async def get_weather_telemetry(
             data["resolved_city"] = resolved_name
             return data
         except Exception as e:
-            # Fallback mock so UI never breaks if Open-Meteo rate-limits
             return {
                 "latitude": target_lat,
                 "longitude": target_lon,
                 "resolved_city": resolved_name,
                 "current": {
-                    "temperature_2m": 24.5,
-                    "relative_humidity_2m": 65,
+                    "temperature_2m": 27.2,
+                    "relative_humidity_2m": 62,
                     "precipitation": 0.0,
-                    "wind_speed_10m": 12.8
+                    "wind_speed_10m": 11.4
                 },
                 "hourly": {
-                    "temperature_2m": [22.0, 21.5, 20.8, 23.0, 26.5, 25.0]
+                    "temperature_2m": [25.0, 24.2, 23.8, 26.1, 28.0, 27.2]
                 },
                 "status": f"Fallback mode active: {str(e)}"
             }
+
 class QueryRequest(BaseModel):
     query: str
     lat: Optional[float] = None
@@ -95,20 +100,22 @@ class QueryRequest(BaseModel):
 @app.post("/api/copilot")
 async def copilot_intelligence(req: QueryRequest):
     user_text = req.query.strip()
-    
-    # Extract place name if user mentions "in <city>", "at <city>", etc.
-    place_match = re.search(r'(?:in|at|for|around)\s+([a-zA-Z\s]+)', user_text, re.IGNORECASE)
-    detected_city = place_match.group(1).strip() if place_match else None
-    
-    try:
-        telemetry = await get_weather_telemetry(lat=req.lat, lon=req.lon, city=detected_city)
-    except Exception:
-        telemetry = {
-            "resolved_city": detected_city or "Current Region",
-            "current": {"temperature_2m": 24.5, "relative_humidity_2m": 65, "wind_speed_10m": 12.0}
-        }
 
-    city_label = telemetry.get("resolved_city", "your area")
+    # Match common location prepositions and phrases
+    place_match = re.search(
+        r'(?:in|at|for|around|weather of|temperature of|temp of)\s+([a-zA-Z\s]+)', 
+        user_text, 
+        re.IGNORECASE
+    )
+    detected_city = place_match.group(1).strip() if place_match else None
+
+    # Ignore default coordinate overrides when a target city is detected
+    query_lat = None if detected_city else req.lat
+    query_lon = None if detected_city else req.lon
+
+    telemetry = await get_weather_telemetry(lat=query_lat, lon=query_lon, city=detected_city)
+
+    city_label = telemetry.get("resolved_city", detected_city or "your current location")
     cur = telemetry.get("current", {})
     temp = cur.get("temperature_2m", "--")
     wind = cur.get("wind_speed_10m", "--")
@@ -116,7 +123,6 @@ async def copilot_intelligence(req: QueryRequest):
 
     reply = (
         f"In {city_label}, the current temperature is {temp}°C with a relative humidity of "
-        f"{humidity}% and wind velocities reaching {wind} km/h."
+        f"{humidity}% and wind velocities at {wind} km/h."
     )
-    
-    return {"reply": reply, "telemetry": telemetry}
+    return {"reply": reply, "telemetry": telemetry}metry}
