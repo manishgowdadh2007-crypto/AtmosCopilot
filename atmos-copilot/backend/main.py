@@ -27,19 +27,22 @@ async def get_weather_telemetry(
     date_str: Optional[str] = Query(None)
 ):
     headers = {"User-Agent": "curl/7.68.0"}
-    target_location = city.strip() if (city and city.strip()) else ""
-
-    if not target_location:
-        target_location = f"{lat},{lon}" if (lat is not None and lon is not None) else "Bengaluru"
+    
+    # Prioritize city search if passed; otherwise fall back to exact GPS
+    target_query = city.strip() if (city and city.strip()) else ""
+    if not target_query:
+        if lat is not None and lon is not None:
+            target_query = f"{lat},{lon}"
+        else:
+            target_query = "Bengaluru"
 
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
-            # wttr.in accepts dates directly if provided: wttr.in/Paris?date=2026-08-15
-            query_param = f"{target_location}?format=j1"
+            param = f"{target_query}?format=j1"
             if date_str:
-                query_param = f"{target_location}?date={date_str}&format=j1"
+                param = f"{target_query}?date={date_str}&format=j1"
 
-            res = await client.get(f"https://wttr.in/{query_param}", headers=headers)
+            res = await client.get(f"https://wttr.in/{param}", headers=headers)
             res.raise_for_status()
             data = res.json()
 
@@ -47,18 +50,21 @@ async def get_weather_telemetry(
             today_weather = data.get("weather", [{}])[0]
             area_info = data.get("nearest_area", [{}])[0]
 
-            resolved_city = area_info.get("areaName", [{}])[0].get("value", target_location.title())
-            country = area_info.get("country", [{}])[0].get("value", "")
-            full_label = f"{resolved_city}, {country}".strip(", ")
+            # If user explicitly searched a city/locality, use their input as the label
+            if city and city.strip():
+                resolved_label = city.strip().title()
+            else:
+                raw_area = area_info.get("areaName", [{}])[0].get("value", "")
+                raw_region = area_info.get("region", [{}])[0].get("value", "")
+                resolved_label = f"{raw_area}, {raw_region}".strip(", ") or "Your Location"
 
-            # Daily aggregated metrics
-            rain_chance = int(today_weather.get("hourly", [{}])[0].get("chanceofrain", 0))
             cloud_cover = int(current_cond.get("cloudcover", 0))
+            rain_chance = int(today_weather.get("hourly", [{}])[0].get("chanceofrain", 0))
 
             return {
                 "latitude": float(area_info.get("latitude", lat or 12.97)),
                 "longitude": float(area_info.get("longitude", lon or 77.59)),
-                "resolved_city": full_label,
+                "resolved_city": resolved_label,
                 "current": {
                     "temperature_2m": float(current_cond.get("temp_C", 25.0)),
                     "relative_humidity_2m": float(current_cond.get("humidity", 60.0)),
@@ -67,24 +73,20 @@ async def get_weather_telemetry(
                     "weather_desc": current_cond.get("weatherDesc", [{}])[0].get("value", "Clear"),
                     "cloudcover": cloud_cover,
                     "chance_of_rain": rain_chance
-                },
-                "daily": {
-                    "max_temp": float(today_weather.get("maxtempC", 28.0)),
-                    "min_temp": float(today_weather.get("mintempC", 20.0))
                 }
             }
         except Exception as e:
             return {
                 "latitude": lat or 12.97,
                 "longitude": lon or 77.59,
-                "resolved_city": target_location.title() or "Local Area",
+                "resolved_city": (city.title() if city else "Current Location"),
                 "current": {
-                    "temperature_2m": 26.0,
+                    "temperature_2m": 25.0,
                     "relative_humidity_2m": 60,
                     "precipitation": 0.0,
                     "wind_speed_10m": 12.0,
-                    "weather_desc": "Partly Cloudy",
-                    "cloudcover": 40,
+                    "weather_desc": "Clear",
+                    "cloudcover": 20,
                     "chance_of_rain": 10
                 },
                 "status": f"Fallback: {str(e)}"
@@ -98,30 +100,36 @@ class QueryRequest(BaseModel):
 @app.post("/api/ai-query")
 @app.post("/api/copilot")
 async def copilot_intelligence(req: QueryRequest):
-    q = req.query.lower().strip()
+    q = req.query.strip()
+    q_lower = q.lower()
 
-    # 1. Detect target location
-    # Matches: "in mysore", "at tokyo", "around london", "for delhi", "whether at goa"
-    place_match = re.search(r'(?:in|at|for|around|of)\s+([a-zA-Z\s]+?)(?:\s+(?:today|yesterday|tomorrow|on|in\s+\d{4})|$)', q)
-    detected_city = place_match.group(1).strip() if place_match else None
+    # 1. Improved place extraction
+    # Matches patterns like: "in mysore", "at tokyo", "for london", "weather of paris", "temperature in JJR nagar"
+    target_city = None
+    place_match = re.search(r'(?:in|at|for|around|of)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:today|tomorrow|yesterday|now|right now|on)|$|\?)', q, re.IGNORECASE)
+    
+    if place_match:
+        candidate = place_match.group(1).strip()
+        # Filter out common stop words if falsely captured
+        if candidate.lower() not in ["the", "my area", "here", "current location", "present area", "today", "tomorrow", "yesterday"]:
+            target_city = candidate
 
-    # Disregard filler words if captured as city
-    if detected_city in ["today", "tomorrow", "yesterday"]:
-        detected_city = None
-
-    # 2. Detect dates (e.g., 2026-08-15, 15 August 2026, yesterday)
+    # 2. Date extraction (YYYY-MM-DD)
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', q)
     date_str = date_match.group(1) if date_match else None
 
-    # Fetch live telemetry
+    # If user asked about a specific place, IGNORE the device GPS so it does not fetch your current place
+    fetch_lat = None if target_city else req.lat
+    fetch_lon = None if target_city else req.lon
+
     telemetry = await get_weather_telemetry(
-        lat=None if detected_city else req.lat,
-        lon=None if detected_city else req.lon,
-        city=detected_city,
+        lat=fetch_lat,
+        lon=fetch_lon,
+        city=target_city,
         date_str=date_str
     )
 
-    city_label = telemetry.get("resolved_city") or (detected_city.title() if detected_city else "your current location")
+    city_label = target_city.title() if target_city else telemetry.get("resolved_city", "your present location")
     cur = telemetry.get("current", {})
     temp = cur.get("temperature_2m", 25.0)
     wind = cur.get("wind_speed_10m", 10.0)
@@ -131,39 +139,32 @@ async def copilot_intelligence(req: QueryRequest):
     clouds = cur.get("cloudcover", 20)
     rain_chance = cur.get("chance_of_rain", 0)
 
-    # 3. Dynamic intent classification
-
-    # Intent A: Rain inquiry ("does it rain today", "will it rain", "is it raining")
-    if "rain" in q or "precipitation" in q:
-        if precip > 0.5 or "rain" in cond or rain_chance > 50:
-            reply = f"Yes, expect rain in {city_label}. Current precipitation is {precip} mm with a {rain_chance}% chance of rainfall and {cond} skies."
+    # 3. Dynamic Intent Responses
+    if "rain" in q_lower or "precipitation" in q_lower:
+        if precip > 0.1 or "rain" in cond or rain_chance > 40:
+            reply = f"Yes, rain is expected in {city_label}. Precipitation is at {precip} mm with a {rain_chance}% chance of rain and {cond} skies."
         else:
-            reply = f"No substantial rain is expected in {city_label} today. Precipitation is at {precip} mm with an estimated rain probability of {rain_chance}%."
+            reply = f"No rain expected in {city_label} today. Precipitation is {precip} mm with only a {rain_chance}% chance of rainfall."
 
-    # Intent B: Cloudy inquiry ("is it cloudy today", "cloud cover")
-    elif "cloud" in q or "overcast" in q:
-        if clouds > 60 or "overcast" in cond or "cloud" in cond:
-            reply = f"Yes, it is quite cloudy in {city_label} right now with approximately {clouds}% cloud cover and {cond} conditions."
+    elif "cloud" in q_lower or "overcast" in q_lower:
+        if clouds > 50 or "overcast" in cond or "cloud" in cond:
+            reply = f"Yes, it is cloudy in {city_label} with {clouds}% cloud coverage and {cond} conditions."
         else:
-            reply = f"No, it is not particularly cloudy in {city_label}. Cloud coverage is low at roughly {clouds}%, keeping the atmosphere mostly clear."
+            reply = f"No, skies are mostly clear in {city_label} with low cloud cover at around {clouds}%."
 
-    # Intent C: Sunny / Clear inquiry ("is it sunny today", "clear skies")
-    elif "sun" in q or "sunny" in q or "clear" in q:
-        if "sunny" in cond or "clear" in cond or clouds < 30:
-            reply = f"Yes, it is sunny and clear in {city_label} today with {cond} skies, {clouds}% cloud cover, and temperatures around {temp}°C."
+    elif "sun" in q_lower or "sunny" in q_lower or "clear" in q_lower:
+        if "sun" in cond or "clear" in cond or clouds < 30:
+            reply = f"Yes, it is sunny and clear in {city_label} with {clouds}% cloud cover and temperatures around {temp}°C."
         else:
-            reply = f"Not particularly sunny in {city_label} today. Skies are currently {cond} with {clouds}% cloud cover and temperatures around {temp}°C."
+            reply = f"It is not particularly sunny in {city_label} right now; conditions are {cond} with {clouds}% cloud cover."
 
-    # Intent D: Historical / Past Date queries
     elif date_str:
-        reply = f"On {date_str} in {city_label}, atmospheric records report {cond} conditions with a recorded temperature of {temp}°C and {humidity}% humidity."
+        reply = f"On {date_str} in {city_label}, atmospheric records indicate {cond} skies with a temperature of {temp}°C and {humidity}% humidity."
 
-    # Intent E: Temperature specific ("what is the temperature")
-    elif "temp" in q or "temperature" in q or "hot" in q or "cold" in q:
-        reply = f"The current temperature in {city_label} is {temp}°C (humidity: {humidity}%, winds: {wind} km/h)."
+    elif "temp" in q_lower or "temperature" in q_lower or "hot" in q_lower or "cold" in q_lower:
+        reply = f"The current temperature in {city_label} is {temp}°C with {humidity}% humidity and wind speeds of {wind} km/h."
 
-    # Intent F: General weather overview ("what is the weather", "weather of ...")
     else:
-        reply = f"Weather in {city_label}: currently {cond} at {temp}°C, {humidity}% humidity, and wind speeds reaching {wind} km/h."
+        reply = f"Current weather in {city_label}: {cond} at {temp}°C, {humidity}% humidity, and wind speeds around {wind} km/h."
 
     return {"reply": reply, "telemetry": telemetry}
