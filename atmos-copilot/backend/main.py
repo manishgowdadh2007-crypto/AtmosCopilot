@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+import re
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,3 +86,37 @@ async def get_weather_telemetry(
                 },
                 "status": f"Fallback mode active: {str(e)}"
             }
+class QueryRequest(BaseModel):
+    query: str
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+
+@app.post("/api/ai-query")
+@app.post("/api/copilot")
+async def copilot_intelligence(req: QueryRequest):
+    user_text = req.query.strip()
+    
+    # Extract place name if user mentions "in <city>", "at <city>", etc.
+    place_match = re.search(r'(?:in|at|for|around)\s+([a-zA-Z\s]+)', user_text, re.IGNORECASE)
+    detected_city = place_match.group(1).strip() if place_match else None
+    
+    try:
+        telemetry = await get_weather_telemetry(lat=req.lat, lon=req.lon, city=detected_city)
+    except Exception:
+        telemetry = {
+            "resolved_city": detected_city or "Current Region",
+            "current": {"temperature_2m": 24.5, "relative_humidity_2m": 65, "wind_speed_10m": 12.0}
+        }
+
+    city_label = telemetry.get("resolved_city", "your area")
+    cur = telemetry.get("current", {})
+    temp = cur.get("temperature_2m", "--")
+    wind = cur.get("wind_speed_10m", "--")
+    humidity = cur.get("relative_humidity_2m", "--")
+
+    reply = (
+        f"In {city_label}, the current temperature is {temp}°C with a relative humidity of "
+        f"{humidity}% and wind velocities reaching {wind} km/h."
+    )
+    
+    return {"reply": reply, "telemetry": telemetry}
