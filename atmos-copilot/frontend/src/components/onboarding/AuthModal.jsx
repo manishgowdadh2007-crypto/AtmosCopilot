@@ -1,24 +1,31 @@
 import React, { useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { registerUser } from '../../services/api';
 
 export default function AuthModal({ onAuthorized }) {
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMsg(null);
 
     if (!navigator.geolocation) {
-      alert("Geolocation hardware is required for hyper-local forecasting.");
+      setErrorMsg("Geolocation hardware is required for hyper-local forecasting.");
       setIsLoading(false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        // High-precision coordinates rounded to 6 decimals (sub-meter resolution)
+        const coords = {
+          lat: parseFloat(pos.coords.latitude.toFixed(6)),
+          lon: parseFloat(pos.coords.longitude.toFixed(6)),
+          accuracy: pos.coords.accuracy
+        };
 
         // Request Microphone Access
         try {
@@ -38,10 +45,15 @@ export default function AuthModal({ onAuthorized }) {
         onAuthorized(coords);
       },
       (err) => {
-        alert("Precise location is mandatory: " + err.message);
+        console.warn("Precise GPS acquisition failed:", err);
+        setErrorMsg("Precise location is mandatory: " + err.message);
         setIsLoading(false);
       },
-      { enableHighAccuracy: true }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0 // Bypasses stale cached coordinates
+      }
     );
   };
 
@@ -52,6 +64,13 @@ export default function AuthModal({ onAuthorized }) {
           <h2 className="text-2xl font-bold text-slate-100">Access Telemetry Node</h2>
           <p className="text-xs text-slate-400 mt-1">Provide credentials to initialize live hyper-local observation feeds.</p>
         </div>
+
+        {errorMsg && (
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs text-left">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         <div className="space-y-4 text-xs">
           <div>
@@ -97,9 +116,13 @@ export default function AuthModal({ onAuthorized }) {
         <button 
           type="submit" 
           disabled={isLoading}
-          className="w-full bg-gradient-to-r from-blue-600 to-amber-500 hover:opacity-90 font-semibold py-3.5 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-2"
+          className="w-full bg-gradient-to-r from-blue-600 to-amber-500 hover:opacity-90 font-semibold py-3.5 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          {isLoading ? "Authorizing Telemetry..." : "Authorize & Launch"}
+          {isLoading ? (
+            <span className="inline-block w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            "Authorize & Launch"
+          )}
         </button>
       </form>
     </div>
