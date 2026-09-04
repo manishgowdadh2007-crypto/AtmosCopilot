@@ -20,8 +20,27 @@ export default function App() {
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
 
+  // High-precision live GPS polling and continuous telemetry synchronization
   useEffect(() => {
-    if (coords) {
+    if (navigator.geolocation && !coords) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const freshCoords = {
+            lat: parseFloat(pos.coords.latitude.toFixed(6)),
+            lon: parseFloat(pos.coords.longitude.toFixed(6))
+          };
+          setCoords(freshCoords);
+          fetchWeatherTelemetry(freshCoords.lat, freshCoords.lon)
+            .then(data => setWeather(data))
+            .catch(err => console.error("Telemetry link error:", err));
+        },
+        () => {
+          // Soft fallback coordinates if permission is denied or pending
+          fetchWeatherTelemetry(12.9716, 77.5946).then(data => setWeather(data));
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    } else if (coords) {
       fetchWeatherTelemetry(coords.lat, coords.lon)
         .then(data => setWeather(data))
         .catch(err => console.error("Telemetry link error:", err));
@@ -55,9 +74,9 @@ export default function App() {
     return <AuthModal onAuthorized={handleAuthorized} />;
   }
 
-  // Telemetry fallbacks
+  // Dynamic telemetry fallbacks
   const cur = weather?.current || { temp: 26, condition: "Partly Cloudy", precipitation: 18, humidity: 60, wind: 20 };
-  const city = weather?.resolved_city || "Bangalore, Karnataka";
+  const city = weather?.resolved_city || "Bengaluru, Karnataka";
   const hourly = weather?.hourly?.length ? weather.hourly : [
     { time: "12 am", temp: 21, precip: 10, wind: 12 },
     { time: "3 am", temp: 20, precip: 15, wind: 10 },
