@@ -1,5 +1,17 @@
-import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import httpx
+
+app = FastAPI(title="AtmosCopilot Backend Engine", version="1.0.0")
+
+# Enable CORS for your Vercel frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/api/weather-telemetry")
 async def get_weather_telemetry(lat: float, lon: float):
@@ -9,6 +21,7 @@ async def get_weather_telemetry(lat: float, lon: float):
         "longitude": lon,
         "current": "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m",
         "hourly": "temperature_2m",
+        "daily": "temperature_2m_max,temperature_2m_min",
         "timezone": "auto"
     }
     headers = {
@@ -21,7 +34,6 @@ async def get_weather_telemetry(lat: float, lon: float):
             res.raise_for_status()
             return res.json()
         except Exception as e:
-            # Failsafe fallback so your frontend never receives a 502 error
             return {
                 "latitude": lat,
                 "longitude": lon,
@@ -36,3 +48,5 @@ async def get_weather_telemetry(lat: float, lon: float):
                 },
                 "status": f"Fallback mode active: {str(e)}"
             }
+
+# (Keep your existing /api/register and /api/ai-query endpoints below this)
