@@ -5,6 +5,7 @@ import httpx
 
 app = FastAPI(title="AtmosCopilot Backend Engine", version="1.0.0")
 
+# Enable CORS for your Vercel frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,6 +14,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "AtmosCopilot Backend Operational"}
 
 @app.get("/api/weather-telemetry")
 async def get_weather_telemetry(
@@ -26,7 +30,7 @@ async def get_weather_telemetry(
     resolved_name = "Target Area"
 
     async with httpx.AsyncClient(timeout=12.0) as client:
-        # If city name was passed, resolve coordinates via geocoding
+        # 1. If city name was passed, resolve coordinates via geocoding
         if city:
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
             try:
@@ -35,14 +39,18 @@ async def get_weather_telemetry(
                 if geo_data.get("results"):
                     target_lat = geo_data["results"][0]["latitude"]
                     target_lon = geo_data["results"][0]["longitude"]
-                    resolved_name = geo_data["results"][0].get("name", city)
+                    city_name = geo_data["results"][0].get("name", city)
+                    country = geo_data["results"][0].get("country", "")
+                    resolved_name = f"{city_name}, {country}".strip(", ")
             except Exception:
                 pass
 
-        # Fallback to defaults if neither coordinates nor valid city resolved
+        # 2. Fallback coordinates if neither coords nor valid city resolved
         if target_lat is None or target_lon is None:
             target_lat, target_lon = 12.96, 77.56
+            resolved_name = "Bengaluru, India"
 
+        # 3. Fetch telemetry for target coordinates
         forecast_url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": target_lat,
@@ -60,6 +68,7 @@ async def get_weather_telemetry(
             data["resolved_city"] = resolved_name
             return data
         except Exception as e:
+            # Fallback mock so UI never breaks if Open-Meteo rate-limits
             return {
                 "latitude": target_lat,
                 "longitude": target_lon,
@@ -69,6 +78,9 @@ async def get_weather_telemetry(
                     "relative_humidity_2m": 65,
                     "precipitation": 0.0,
                     "wind_speed_10m": 12.8
+                },
+                "hourly": {
+                    "temperature_2m": [22.0, 21.5, 20.8, 23.0, 26.5, 25.0]
                 },
                 "status": f"Fallback mode active: {str(e)}"
             }
