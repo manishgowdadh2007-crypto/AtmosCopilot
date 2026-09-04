@@ -29,26 +29,29 @@ export default function SatelliteView({ coords, weather }) {
     return () => clearInterval(timer);
   }, []);
 
-  // Native real-time Zoom Earth telemetry engine
-  const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${lat.toFixed(6)},${lon.toFixed(6)},6z/overlays=${
+  // Embed-permissive Windy satellite engine (bypasses X-Frame-Options block)
+  const mapUrl = `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=7&overlay=${
     activeLayer === "radar"
       ? "radar"
       : activeLayer === "wind"
       ? "wind"
-      : "radar,wind"
-  }`;
+      : "satellite"
+  }&product=satellite&level=surface&lat=${lat}&lon=${lon}`;
 
   return (
     <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none font-sans">
-      {/* 1. Zoom Earth Real-Time Canvas: Precision offset eliminates all external banners & watermarks */}
+      {/* 1. Interactive Real-Time Satellite Engine */}
       <iframe
-        title="Zoom Earth Live Satellite Telemetry"
-        src={zoomEarthUrl}
-        className="absolute -top-[54px] -left-2 w-[calc(100%+16px)] h-[calc(100%+98px)] border-0"
+        title="Live Satellite Telemetry"
+        src={mapUrl}
+        className="absolute -top-[52px] -left-2 w-[calc(100%+16px)] h-[calc(100%+100px)] border-0 filter saturate-[1.1] contrast-[1.05]"
         allow="geolocation"
       />
 
-      {/* 2. Floating Left Layers Menu */}
+      {/* 2. Top-Right Branding Shield: Blocks external watermarks completely */}
+      <div className="absolute top-0 right-0 w-44 h-14 bg-gradient-to-b from-[#05070e] via-[#05070e]/80 to-transparent pointer-events-none z-10" />
+
+      {/* 3. Floating Left Layers Menu */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-3 rounded-2xl shadow-2xl">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
@@ -101,7 +104,7 @@ export default function SatelliteView({ coords, weather }) {
         </div>
       </div>
 
-      {/* 3. Target Coordinates Telemetry Card (Bottom Right) */}
+      {/* 4. Target Coordinates Telemetry Card (Bottom Right) */}
       <div className="absolute bottom-5 right-5 z-20 flex flex-col bg-[#0c101c]/95 backdrop-blur-md border border-slate-700/70 p-4 rounded-2xl shadow-2xl w-64">
         <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-700/60 pb-2">
           <span>Target Coordinates</span>
@@ -111,7 +114,7 @@ export default function SatelliteView({ coords, weather }) {
         </div>
 
         <div className="font-semibold text-white text-sm mt-2 truncate">
-          {weather?.resolved_city || "Jalahalli, Karnataka"}
+          {weather?.resolved_city || "Malleswaram, Karnataka"}
         </div>
         <div className="font-mono text-xs text-slate-400 mt-0.5">
           {lat.toFixed(4)}°N, {lon.toFixed(4)}°E
@@ -133,7 +136,7 @@ export default function SatelliteView({ coords, weather }) {
         </div>
       </div>
 
-      {/* 4. Real-Time AM/PM Indicator & Solar Terminator Loop */}
+      {/* 5. Real-Time AM/PM Indicator & Solar Terminator Status */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
         <div className="flex items-center gap-2">
           <span className="text-sm">{isNightTime ? "🌙" : "☀️"}</span>
@@ -143,7 +146,7 @@ export default function SatelliteView({ coords, weather }) {
         </div>
         <div className="h-4 w-px bg-slate-700" />
         <span className="font-mono text-[11px] text-slate-300">
-          {isNightTime ? "Night-time City Lights Active" : "Daylight Solar Cycle"}
+          {isNightTime ? "Night-time Infrared Active" : "Daylight Visible Cycle"}
         </span>
       </div>
     </div>
