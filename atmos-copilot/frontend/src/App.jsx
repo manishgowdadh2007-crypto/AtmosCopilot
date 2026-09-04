@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SatelliteView from './components/home/SatelliteView';
 import Header from './components/common/Header';
 import SplashScreen from './components/onboarding/SplashScreen';
 import AuthModal from './components/onboarding/AuthModal';
@@ -9,7 +10,7 @@ import { fetchWeatherTelemetry, sendAIChatQuery } from './services/api';
 
 export default function App() {
   const [stage, setStage] = useState('splash');
-  const [currentPage, setCurrentPage] = useState('home');
+  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'satellite' | 'copilot'
   const [coords, setCoords] = useState(null);
   const [weather, setWeather] = useState(null);
   const [isListening, setIsListening] = useState(false);
@@ -100,7 +101,7 @@ export default function App() {
 
       {/* 2. Primary Surface */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {currentPage === 'home' ? (
+        {currentPage === 'home' && (
           /* Observatory Telemetry Deck */
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
@@ -275,7 +276,13 @@ export default function App() {
 
             </div>
           </div>
-        ) : (
+        )}
+
+        {currentPage === 'satellite' && (
+          <SatelliteView coords={coords} weather={weather} />
+        )}
+
+        {currentPage === 'copilot' && (
           /* Sun Copilot Intelligence Chat View */
           <div className="flex-1 flex flex-col min-h-0 w-full max-w-3xl mx-auto">
             <div className="flex flex-col items-center justify-center pt-4 pb-2 flex-shrink-0">
