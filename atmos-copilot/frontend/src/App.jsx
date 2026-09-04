@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import AmbientBg from './components/common/AmbientBg';
 import Header from './components/common/Header';
 import SplashScreen from './components/onboarding/SplashScreen';
 import AuthModal from './components/onboarding/AuthModal';
@@ -58,58 +57,56 @@ export default function App() {
   }
 
   return (
-    <AmbientBg>
-      <div className="flex flex-col h-[100dvh] w-full overflow-hidden">
-        {/* Top Persistent Navigation Header */}
-        <div className="flex-shrink-0 z-50">
-          <Header 
-            coords={coords} 
-            currentPage={currentPage} 
-            setCurrentPage={setCurrentPage} 
-          />
-        </div>
-
-        {/* Viewport Content */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {currentPage === 'home' ? (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
-              <StatRibbon weather={weather} />
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2">
-                  <RainbowGlobe />
-                </div>
-                <ForecastList weather={weather} />
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col h-full w-full max-w-4xl mx-auto overflow-hidden">
-              {/* Single Scaled Hero Header */}
-              <div className="flex flex-col items-center justify-center my-2 sm:my-4 flex-shrink-0">
-                <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-20 sm:h-20" />
-                <h2 className="text-lg sm:text-2xl font-bold mt-2 text-amber-300">
-                  Sun Copilot Intelligence
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-400 text-center px-4">
-                  Strictly streaming live, verified atmospheric telemetry.
-                </p>
-              </div>
-
-              {/* Scrollable Chat Area */}
-              <ChatStream messages={messages} isLoading={isLoading} />
-
-              {/* Pinned Responsive Input Bar */}
-              <div className="flex-shrink-0 p-3 sm:p-4 bg-[#0a0d18]/80 backdrop-blur-md border-t border-white/10">
-                <ChatInput 
-                  onSendMessage={handleSendMessage} 
-                  isListening={isListening} 
-                  setIsListening={setIsListening} 
-                  disabled={isLoading}
-                />
-              </div>
-            </div>
-          )}
-        </div>
+    <div className="fixed inset-0 flex flex-col bg-[#070a14] text-white overflow-hidden">
+      {/* 1. Header always pinned at the top */}
+      <div className="flex-shrink-0 z-50 border-b border-white/10 bg-[#0a0d18]">
+        <Header 
+          coords={coords} 
+          currentPage={currentPage} 
+          setCurrentPage={setCurrentPage} 
+        />
       </div>
-    </AmbientBg>
+
+      {/* 2. Main content viewport */}
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {currentPage === 'home' ? (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
+            <StatRibbon weather={weather} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <RainbowGlobe />
+              </div>
+              <ForecastList weather={weather} />
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col min-h-0 w-full max-w-3xl mx-auto">
+            {/* Scaled Avatar & Titles */}
+            <div className="flex flex-col items-center justify-center pt-3 pb-1 flex-shrink-0">
+              <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-20 sm:h-20" />
+              <h2 className="text-base sm:text-xl font-bold mt-1 text-amber-300">
+                Sun Copilot Intelligence
+              </h2>
+              <p className="text-[11px] sm:text-xs text-slate-400 text-center px-4">
+                Strictly streaming live, verified atmospheric telemetry.
+              </p>
+            </div>
+
+            {/* Scrollable messages container */}
+            <ChatStream messages={messages} isLoading={isLoading} />
+
+            {/* Input bar pinned at bottom */}
+            <div className="flex-shrink-0 p-3 bg-[#0a0d18] border-t border-white/10">
+              <ChatInput 
+                onSendMessage={handleSendMessage} 
+                isListening={isListening} 
+                setIsListening={setIsListening} 
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
