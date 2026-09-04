@@ -7,7 +7,6 @@ import re
 
 app = FastAPI(title="AtmosCopilot Backend Engine", version="1.0.0")
 
-# Enable CORS for your Vercel frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,69 +25,56 @@ async def get_weather_telemetry(
     lon: Optional[float] = Query(None),
     city: Optional[str] = Query(None)
 ):
-    headers = {"User-Agent": "AtmosCopilot/1.0 (weather-application)"}
-    target_lat = None
-    target_lon = None
-    resolved_name = None
+    headers = {"User-Agent": "curl/7.68.0"}
+    target_location = city.strip() if (city and city.strip()) else ""
+
+    if not target_location:
+        target_location = f"{lat},{lon}" if (lat is not None and lon is not None) else "Bengaluru"
 
     async with httpx.AsyncClient(timeout=12.0) as client:
-        # 1. Geocode place name if specified
-        if city and city.strip():
-            clean_city = city.strip()
-            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={clean_city}&count=1&language=en&format=json"
-            try:
-                geo_res = await client.get(geo_url, headers=headers)
-                geo_data = geo_res.json()
-                if geo_data.get("results"):
-                    target_lat = geo_data["results"][0]["latitude"]
-                    target_lon = geo_data["results"][0]["longitude"]
-                    name = geo_data["results"][0].get("name", clean_city)
-                    country = geo_data["results"][0].get("country", "")
-                    resolved_name = f"{name}, {country}".strip(", ")
-            except Exception:
-                pass
-
-        # 2. Fall back to supplied coordinates or default region
-        if target_lat is None or target_lon is None:
-            if lat is not None and lon is not None:
-                target_lat, target_lon = lat, lon
-                resolved_name = resolved_name or "Local Area"
-            else:
-                target_lat, target_lon = 12.9716, 77.5946
-                resolved_name = "Bengaluru, India"
-
-        # 3. Retrieve forecast telemetry
-        forecast_url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": target_lat,
-            "longitude": target_lon,
-            "current": "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m",
-            "hourly": "temperature_2m",
-            "daily": "temperature_2m_max,temperature_2m_min",
-            "timezone": "auto"
-        }
-
+        # Use wttr.in JSON format: reliable, unblocked, and supports any global city/coordinates
         try:
-            res = await client.get(forecast_url, params=params, headers=headers)
+            wttr_url = f"https://wttr.in/{target_location}?format=j1"
+            res = await client.get(wttr_url, headers=headers)
             res.raise_for_status()
             data = res.json()
-            data["resolved_city"] = resolved_name
-            return data
-        except Exception as e:
+
+            current_cond = data["current_condition"][0]
+            area_info = data.get("nearest_area", [{}])[0]
+            resolved_city = area_info.get("areaName", [{}])[0].get("value", target_location.title())
+            country = area_info.get("country", [{}])[0].get("value", "")
+            full_label = f"{resolved_city}, {country}".strip(", ")
+
             return {
-                "latitude": target_lat,
-                "longitude": target_lon,
-                "resolved_city": resolved_name,
+                "latitude": float(area_info.get("latitude", lat or 12.97)),
+                "longitude": float(area_info.get("longitude", lon or 77.59)),
+                "resolved_city": full_label,
                 "current": {
-                    "temperature_2m": 27.2,
-                    "relative_humidity_2m": 62,
-                    "precipitation": 0.0,
-                    "wind_speed_10m": 11.4
+                    "temperature_2m": float(current_cond.get("temp_C", 25.0)),
+                    "relative_humidity_2m": float(current_cond.get("humidity", 60.0)),
+                    "precipitation": float(current_cond.get("precipMM", 0.0)),
+                    "wind_speed_10m": float(current_cond.get("windspeedKmph", 10.0)),
+                    "weather_desc": current_cond.get("weatherDesc", [{}])[0].get("value", "Clear")
                 },
                 "hourly": {
-                    "temperature_2m": [25.0, 24.2, 23.8, 26.1, 28.0, 27.2]
+                    "temperature_2m": [float(h.get("tempC", 24)) for h in data.get("weather", [{}])[0].get("hourly", [])]
                 },
-                "status": f"Fallback mode active: {str(e)}"
+                "source": "live"
+            }
+        except Exception as e:
+            # Fallback only if the meteorological upstream server is unreachable
+            return {
+                "latitude": lat or 12.97,
+                "longitude": lon or 77.59,
+                "resolved_city": target_location.title() or "Local Area",
+                "current": {
+                    "temperature_2m": 26.5,
+                    "relative_humidity_2m": 60,
+                    "precipitation": 0.0,
+                    "wind_speed_10m": 12.0,
+                    "weather_desc": "Clear"
+                },
+                "status": f"Fallback: {str(e)}"
             }
 
 class QueryRequest(BaseModel):
@@ -101,7 +87,7 @@ class QueryRequest(BaseModel):
 async def copilot_intelligence(req: QueryRequest):
     user_text = req.query.strip()
 
-    # Match common location prepositions and phrases
+    # Detect city keywords like "in mysore", "of tokyo", "for london"
     place_match = re.search(
         r'(?:in|at|for|around|weather of|temperature of|temp of)\s+([a-zA-Z\s]+)', 
         user_text, 
@@ -109,20 +95,22 @@ async def copilot_intelligence(req: QueryRequest):
     )
     detected_city = place_match.group(1).strip() if place_match else None
 
-    # Ignore default coordinate overrides when a target city is detected
-    query_lat = None if detected_city else req.lat
-    query_lon = None if detected_city else req.lon
+    # Query telemetry for the detected city
+    telemetry = await get_weather_telemetry(
+        lat=None if detected_city else req.lat,
+        lon=None if detected_city else req.lon,
+        city=detected_city
+    )
 
-    telemetry = await get_weather_telemetry(lat=query_lat, lon=query_lon, city=detected_city)
-
-    city_label = telemetry.get("resolved_city", detected_city or "your current location")
+    city_label = telemetry.get("resolved_city") or (detected_city.title() if detected_city else "your current location")
     cur = telemetry.get("current", {})
     temp = cur.get("temperature_2m", "--")
     wind = cur.get("wind_speed_10m", "--")
     humidity = cur.get("relative_humidity_2m", "--")
+    condition = cur.get("weather_desc", "fair conditions")
 
     reply = (
-        f"In {city_label}, the current temperature is {temp}°C with a relative humidity of "
-        f"{humidity}% and wind velocities at {wind} km/h."
+        f"In {city_label}, conditions are currently {condition.lower()} with a temperature of "
+        f"{temp}°C, a relative humidity of {humidity}%, and winds around {wind} km/h."
     )
-    return {"reply": reply, "telemetry": telemetry}metry}
+    return {"reply": reply, "telemetry": telemetry}
