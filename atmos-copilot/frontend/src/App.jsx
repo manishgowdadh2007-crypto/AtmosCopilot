@@ -371,7 +371,16 @@ export default function App() {
                 disabled={isLoading}
               />
             </div>
-          </div>
+          </div><span className="text-xs uppercase tracking-widest text-amber-400 font-semibold">
+  IMD Bengaluru RMC Feed
+</span>
+<h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">
+  {city}
+</h2>
+<p className="text-xs text-slate-400 mt-0.5 font-mono">
+  Source: India Meteorological Department • {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Observatory Link"}
+</p>
+
         )}
       </main>
     </div>
