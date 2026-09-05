@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -37,7 +38,6 @@ async def get_weather_telemetry(
                 geo_res = await client.get(geo_url, headers=headers)
                 if geo_res.status_code == 200:
                     g = geo_res.json()
-                    # Extract fine-grained neighborhood details
                     suburb = (
                         g.get("locality") 
                         or g.get("suburb") 
@@ -76,12 +76,20 @@ async def get_weather_telemetry(
                     raw_reg = area_info.get("region", [{}])[0].get("value", "Karnataka")
                     resolved_place = f"{raw_sub}, {raw_reg}"
 
-            # 7-day daily forecast breakdown
+            # 7-day daily forecast breakdown dynamically mapped to calendar days
             daily_list = []
-            days_names = ["Today", "Sat", "Sun", "Mon", "Tue", "Wed", "Thu"]
             for idx, w in enumerate(data.get("weather", [])[:7]):
+                raw_date_str = w.get("date")
+                if idx == 0:
+                    day_label = "Today"
+                elif raw_date_str:
+                    dt = datetime.strptime(raw_date_str, "%Y-%m-%d")
+                    day_label = dt.strftime("%a")
+                else:
+                    day_label = (datetime.now() + timedelta(days=idx)).strftime("%a")
+
                 daily_list.append({
-                    "day": days_names[idx] if idx < len(days_names) else "Day",
+                    "day": day_label,
                     "max_temp": int(w.get("maxtempC", 30)),
                     "min_temp": int(w.get("mintempC", 21)),
                     "condition": w.get("hourly", [{}])[4].get("weatherDesc", [{}])[0].get("value", "Partly cloudy"),
@@ -128,6 +136,16 @@ async def get_weather_telemetry(
                 "daily": daily_list
             }
         except Exception:
+            dynamic_fallback_daily = []
+            for i in range(7):
+                d_label = "Today" if i == 0 else (datetime.now() + timedelta(days=i)).strftime("%a")
+                dynamic_fallback_daily.append({
+                    "day": d_label,
+                    "max_temp": 31,
+                    "min_temp": 20,
+                    "condition": "Partly cloudy"
+                })
+
             return {
                 "latitude": lat or 12.9716,
                 "longitude": lon or 77.5946,
@@ -156,15 +174,7 @@ async def get_weather_telemetry(
                     {"time": "6 pm", "temp": 29, "precip": 15, "wind": 14},
                     {"time": "9 pm", "temp": 26, "precip": 12, "wind": 11}
                 ],
-                "daily": [
-                    {"day": "Today", "max_temp": 31, "min_temp": 20, "condition": "Partly cloudy"},
-                    {"day": "Sat", "max_temp": 32, "min_temp": 21, "condition": "Partly cloudy"},
-                    {"day": "Sun", "max_temp": 32, "min_temp": 22, "condition": "Partly cloudy"},
-                    {"day": "Mon", "max_temp": 30, "min_temp": 21, "condition": "Rain"},
-                    {"day": "Tue", "max_temp": 31, "min_temp": 21, "condition": "Partly cloudy"},
-                    {"day": "Wed", "max_temp": 30, "min_temp": 20, "condition": "Overcast"},
-                    {"day": "Thu", "max_temp": 29, "min_temp": 19, "condition": "Rain"}
-                ]
+                "daily": dynamic_fallback_daily
             }
 
 class QueryRequest(BaseModel):
