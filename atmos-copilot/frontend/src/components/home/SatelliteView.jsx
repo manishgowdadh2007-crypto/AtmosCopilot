@@ -1,16 +1,12 @@
 import React, { useState, useEffect } from "react";
 
 export default function SatelliteView({ coords, weather }) {
-  const [activeLayer, setActiveLayer] = useState("imd"); // "imd" | "radar" | "satellite"
+  // Available views: "radar" (Live Doppler Radar), "satellite" (IR/Visible Sat), "wind" (Kinetic Vector Stream)
+  const [activeLayer, setActiveLayer] = useState("radar");
   const [currentTimeStr, setCurrentTimeStr] = useState("");
-  const [imageLoading, setImageLoading] = useState(true);
-  const [radarError, setRadarError] = useState(false);
 
   const lat = coords?.lat || 12.9716;
   const lon = coords?.lon || 77.5946;
-
-  const backendBase = "https://atmoscopilot-backend.onrender.com/api";
-  const radarProxyUrl = `${backendBase}/imd-radar?t=${Date.now()}`;
 
   useEffect(() => {
     const updateTime = () => {
@@ -31,98 +27,26 @@ export default function SatelliteView({ coords, weather }) {
 
   return (
     <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none font-sans flex flex-col">
-      {/* Dynamic Tile Surface */}
-      {activeLayer === "imd" ? (
-        <div className="w-full h-full flex flex-col items-center justify-center p-3 sm:p-6 bg-[#070b16] overflow-y-auto">
-          <div className="max-w-4xl w-full bg-[#0d1424] border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-amber-300">IMD Bengaluru Doppler Weather Radar</h3>
-                <p className="text-[11px] text-slate-400">Regional Meteorological Centre • Reflectivity MaxZ Feed</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="px-2 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-md font-mono">
-                  LIVE DWR
-                </span>
-              </div>
-            </div>
+      {/* High-Resolution Dynamic Radar/Satellite Feed */}
+      <iframe
+        key={activeLayer}
+        title="Atmospheric Telemetry Stream"
+        src={`https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=8&overlay=${
+          activeLayer === "radar" ? "radar" : activeLayer === "satellite" ? "satellite" : "wind"
+        }&product=${activeLayer === "satellite" ? "satellite" : "radar"}&level=surface&lat=${lat}&lon=${lon}`}
+        className="absolute -top-[52px] -left-2 w-[calc(100%+16px)] h-[calc(100%+100px)] border-0 filter saturate-[1.15] contrast-[1.05]"
+      />
 
-            <div className="relative w-full h-[50vh] sm:h-[58vh] rounded-xl sm:rounded-2xl overflow-hidden bg-[#04060b] flex items-center justify-center border border-slate-800">
-              {imageLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs text-slate-400 bg-slate-950/80 z-10">
-                  <span className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                  <span>Connecting to IMD Bengaluru Radar Feed...</span>
-                </div>
-              )}
-
-              {!radarError ? (
-                <img
-                  src={radarProxyUrl}
-                  alt="IMD Bengaluru Doppler Weather Radar Stream"
-                  className="w-full h-full object-contain filter contrast-125"
-                  onLoad={() => setImageLoading(false)}
-                  onError={() => {
-                    setImageLoading(false);
-                    setRadarError(true);
-                  }}
-                />
-              ) : (
-                /* Fallback interactive IMD portal viewer if image feed is interrupted */
-                <iframe
-                  title="IMD Radar Portal"
-                  src="https://mausam.imd.gov.in/Radar/BLR_MAXZ.gif"
-                  className="w-full h-full border-0"
-                  sandbox="allow-scripts allow-same-origin"
-                />
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 font-mono pt-1 gap-2">
-              <span>Station: IMD Bengaluru (12.9716°N, 77.5946°E)</span>
-              <a
-                href="https://mausam.imd.gov.in/bengaluru/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-amber-400 hover:text-amber-300 transition underline underline-offset-2"
-              >
-                Official IMD Bengaluru Portal ↗
-              </a>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <iframe
-          title="Satellite Stream"
-          src={`https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=8&overlay=${
-            activeLayer === "radar" ? "radar" : "satellite"
-          }&product=satellite&level=surface&lat=${lat}&lon=${lon}`}
-          className="absolute -top-[52px] -left-2 w-[calc(100%+16px)] h-[calc(100%+100px)] border-0 filter saturate-[1.1]"
-        />
-      )}
-
-      {/* Layer Switcher */}
+      {/* Layer Switcher HUD */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 p-2.5 sm:p-3 rounded-2xl shadow-2xl">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
-            Observation Layer
+            Telemetry Surface
           </span>
         </div>
 
         <div className="flex flex-col gap-1.5 mt-1.5">
-          <button
-            onClick={() => setActiveLayer("imd")}
-            className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition ${
-              activeLayer === "imd"
-                ? "bg-amber-500 text-slate-950 font-semibold shadow-md shadow-amber-500/20"
-                : "text-slate-300 hover:bg-slate-800/60"
-            }`}
-          >
-            <span>📡 IMD Bengaluru Radar</span>
-            <span className="text-[10px] font-mono opacity-80 ml-2">Govt</span>
-          </button>
-
           <button
             onClick={() => setActiveLayer("radar")}
             className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition ${
@@ -131,8 +55,8 @@ export default function SatelliteView({ coords, weather }) {
                 : "text-slate-300 hover:bg-slate-800/60"
             }`}
           >
-            <span>🌧️ High-Res Doppler</span>
-            <span className="text-[10px] font-mono opacity-80 ml-2">HD</span>
+            <span>🌧️ Bengaluru Doppler Radar</span>
+            <span className="text-[10px] font-mono opacity-80 ml-2">Live</span>
           </button>
 
           <button
@@ -143,18 +67,34 @@ export default function SatelliteView({ coords, weather }) {
                 : "text-slate-300 hover:bg-slate-800/60"
             }`}
           >
-            <span>🛰️ Cloud Satellite</span>
+            <span>🛰️ INSAT / Cloud Satellite</span>
             <span className="text-[10px] font-mono opacity-80 ml-2">IR</span>
+          </button>
+
+          <button
+            onClick={() => setActiveLayer("wind")}
+            className={`flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition ${
+              activeLayer === "wind"
+                ? "bg-amber-500 text-slate-950 font-semibold shadow-md shadow-amber-500/20"
+                : "text-slate-300 hover:bg-slate-800/60"
+            }`}
+          >
+            <span>💨 Wind Vector Stream</span>
+            <span className="text-[10px] font-mono opacity-80 ml-2">Surface</span>
           </button>
         </div>
       </div>
 
-      {/* Ephemeris & Clock */}
+      {/* Ephemeris & Live Station Status Bar */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-md border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
         <span className="font-mono text-amber-300 font-semibold">{currentTimeStr}</span>
         <div className="h-4 w-px bg-slate-700" />
         <span className="font-mono text-[11px] text-slate-400">
           🌅 {weather?.current?.sunrise || "06:09"} | 🌇 {weather?.current?.sunset || "18:28"} IST
+        </span>
+        <div className="h-4 w-px bg-slate-700 hidden sm:block" />
+        <span className="font-mono text-[11px] text-emerald-400 hidden sm:inline">
+          Station: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Bengaluru"}
         </span>
       </div>
     </div>
