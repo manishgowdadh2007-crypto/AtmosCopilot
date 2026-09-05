@@ -45,11 +45,19 @@ export const registerUser = async (userData) => {
   }
 };
 
-// 2. High-precision GPS meteorological fetcher
+// 2. WMO weather code classifier
+const mapWmoCode = (code) => {
+  if (code === 0) return "Clear";
+  if (code === 1 || code === 2) return "Partly Cloudy";
+  if (code === 3) return "Overcast";
+  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return "Rain";
+  if ([95, 96, 99].includes(code)) return "Thunderstorm";
+  return "Partly Cloudy";
+};
+
+// 3. High-precision GPS meteorological fetcher
 export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  // Query high-resolution meteorological models directly for user's lat & lon
   const endpoint = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto`;
 
   try {
@@ -61,19 +69,17 @@ export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
     const dailyRaw = data.daily || {};
     const hourlyRaw = data.hourly || {};
 
-    // 7-Day synoptic array
     const daily = (dailyRaw.time || []).slice(0, 7).map((t, idx) => {
       const dateObj = new Date(t);
       return {
         day: idx === 0 ? "Today" : dayNames[dateObj.getDay()],
         max_temp: Math.round(dailyRaw.temperature_2m_max[idx] ?? 29),
-        min_temp: Math.round(dailyRaw.temperature_2m_min[idx] ?? 21),
+        min_temp: Math.round(dailyRaw.temperature_2m_min[idx] ?? 20),
         condition: mapWmoCode(dailyRaw.weather_code?.[idx] ?? 1),
         chance_of_rain: dailyRaw.precipitation_probability_max?.[idx] ?? 10
       };
     });
 
-    // 24-hour diurnal projection (3-hour intervals starting from current hour)
     const currentHour = new Date().getHours();
     const hourly = [];
     for (let i = currentHour; i < Math.min(currentHour + 24, (hourlyRaw.time || []).length); i += 3) {
@@ -118,15 +124,6 @@ export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
     console.error("Telemetry fetch error:", err);
     throw err;
   }
-};
-
-const mapWmoCode = (code) => {
-  if (code === 0) return "Clear";
-  if (code === 1 || code === 2) return "Partly Cloudy";
-  if (code === 3) return "Overcast";
-  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return "Rain";
-  if ([95, 96, 99].includes(code)) return "Thunderstorm";
-  return "Partly Cloudy";
 };
 
 export const sendAIChatQuery = async (query, lat, lon) => {
