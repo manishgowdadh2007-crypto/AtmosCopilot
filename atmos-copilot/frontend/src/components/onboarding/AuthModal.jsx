@@ -3,7 +3,15 @@ import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { registerUser } from '../../services/api';
 
 export default function AuthModal({ onAuthorized }) {
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
+  const [formData, setFormData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('atmos_user');
+      return saved ? JSON.parse(saved) : { name: '', email: '', phone: '' };
+    } catch {
+      return { name: '', email: '', phone: '' };
+    }
+  });
+
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -12,44 +20,51 @@ export default function AuthModal({ onAuthorized }) {
     setIsLoading(true);
     setErrorMsg(null);
 
-    if (!navigator.geolocation) {
-      setErrorMsg("GPS hardware is unavailable on this device.");
+    const now = new Date();
+    const loginTimestamp = {
+      date: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      raw: now.toISOString()
+    };
+
+    const proceedWithCoords = async (accurateCoords) => {
+      const userData = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        lastLoginDate: loginTimestamp.date,
+        lastLoginTime: loginTimestamp.time,
+      };
+
+      // Store in device session
+      localStorage.setItem('atmos_user', JSON.stringify(userData));
+
+      try {
+        await registerUser({ ...userData, latitude: accurateCoords.lat, longitude: accurateCoords.lon });
+      } catch (err) {
+        console.warn("Backend registration sync warning:", err);
+      }
+
       setIsLoading(false);
+      onAuthorized(accurateCoords, userData);
+    };
+
+    if (!navigator.geolocation) {
+      proceedWithCoords({ lat: 12.9716, lon: 77.5946 });
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const accurateCoords = {
+      (pos) => {
+        proceedWithCoords({
           lat: parseFloat(pos.coords.latitude.toFixed(6)),
           lon: parseFloat(pos.coords.longitude.toFixed(6)),
-          accuracy: pos.coords.accuracy,
-        };
-
-        const userData = {
-          name: formData.name.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-        };
-
-        // 1. Persist directly to device storage so credentials never disappear
-        localStorage.setItem('atmos_user', JSON.stringify(userData));
-
-        // 2. Dispatch to backend API
-        try {
-          await registerUser({ ...userData, latitude: accurateCoords.lat, longitude: accurateCoords.lon });
-        } catch (err) {
-          console.warn("Backend registration sync warning (continuing locally):", err);
-        }
-
-        setIsLoading(false);
-        onAuthorized(accurateCoords, userData);
+        });
       },
-      (err) => {
-        setErrorMsg("Location access required: " + err.message);
-        setIsLoading(false);
+      () => {
+        proceedWithCoords({ lat: 12.9716, lon: 77.5946 });
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   };
 
