@@ -1,176 +1,156 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Bell, AlertTriangle, CloudRain, Wind, History, Trash2, 
-  Settings, LogOut, User, Mail, Phone, Clock, ShieldCheck, CheckCircle2 
-} from 'lucide-react';
-import SatelliteView from './components/home/SatelliteView';
-import Header from './components/common/Header';
-import SplashScreen from './components/onboarding/SplashScreen';
-import AuthModal from './components/onboarding/AuthModal';
-import SunAvatar from './components/copilot/SunAvatar';
-import ChatStream from './components/copilot/ChatStream';
-import ChatInput from './components/copilot/ChatInput';
-import { fetchWeatherTelemetry, reverseGeocodeCoordinates, sendAIChatQuery } from './services/api';
+const BASE_URL = 'https://atmoscopilot-backend.onrender.com/api';
 
-export default function App() {
-  const savedUser = (() => {
-    try {
-      const saved = localStorage.getItem('atmos_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  })();
+const mapWmoCode = (code) => {
+  if (code === 0) return "Clear";
+  if (code === 1 || code === 2) return "Partly Cloudy";
+  if (code === 3) return "Overcast";
+  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return "Rain";
+  if ([95, 96, 99].includes(code)) return "Thunderstorm";
+  return "Partly Cloudy";
+};
 
-  const [user, setUser] = useState(savedUser);
-  const [stage, setStage] = useState(savedUser ? 'app' : 'splash');
-  const [currentPage, setCurrentPage] = useState('home');
-  const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
-  const [weather, setWeather] = useState(null);
+// 1. Client-side reverse geocoding with instant safety fallback
+export const reverseGeocodeCoordinates = async (lat, lon) => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5s max
 
-  // Search History Store
-  const [searchHistory, setSearchHistory] = useState(() => {
-    try {
-      const saved = localStorage.getItem('atmos_search_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [isListening, setIsListening] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeMetric, setActiveMetric] = useState('temp');
-  const [isLocating, setIsLocating] = useState(false);
-  const [messages, setMessages] = useState([
-    { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
-  ]);
-
-  const syncTelemetryLocation = async (lat, lon) => {
-    setIsLocating(true);
-    try {
-      const weatherData = await fetchWeatherTelemetry(lat, lon);
-      setWeather(weatherData);
-
-      reverseGeocodeCoordinates(lat, lon).then((cityName) => {
-        if (cityName) {
-          setWeather((prev) => (prev ? { ...prev, resolved_city: cityName } : prev));
-        }
-      });
-    } catch (err) {
-      console.error("Telemetry sync error:", err);
-    } finally {
-      setIsLocating(false);
-    }
-  };
-
-  const acquireAccuratePosition = () => {
-    setIsLocating(true);
-    if (!navigator.geolocation) {
-      syncTelemetryLocation(12.9716, 77.5946);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const accurate = {
-          lat: parseFloat(pos.coords.latitude.toFixed(6)),
-          lon: parseFloat(pos.coords.longitude.toFixed(6)),
-        };
-        setCoords(accurate);
-        syncTelemetryLocation(accurate.lat, accurate.lon);
-      },
-      (err) => {
-        console.warn("GPS lock error, defaulting to Bengaluru:", err);
-        const fallback = { lat: 12.9716, lon: 77.5946 };
-        setCoords(fallback);
-        syncTelemetryLocation(fallback.lat, fallback.lon);
-      },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=18&addressdetails=1`,
+      {
+        headers: { 'Accept-Language': 'en' },
+        signal: controller.signal
+      }
     );
-  };
+    clearTimeout(timeoutId);
 
-  useEffect(() => {
-    syncTelemetryLocation(12.9716, 77.5946);
-    acquireAccuratePosition();
-  }, []);
+    if (!res.ok) throw new Error('Geocoding failed');
+    const data = await res.json();
+    const addr = data.address || {};
 
-  const handleAuthorized = (retrievedCoords, userData) => {
-    const finalCoords = retrievedCoords || { lat: 12.9716, lon: 77.5946 };
-    setCoords(finalCoords);
-    if (userData) {
-      setUser(userData);
-      localStorage.setItem('atmos_user', JSON.stringify(userData));
-    }
-    setStage('app');
-    syncTelemetryLocation(finalCoords.lat, finalCoords.lon);
-  };
+    const locality =
+      addr.neighbourhood ||
+      addr.suburb ||
+      addr.residential ||
+      addr.quarter ||
+      addr.road ||
+      addr.city_district ||
+      addr.village ||
+      addr.city ||
+      'Bengaluru';
 
-  const handleLogout = () => {
-    localStorage.removeItem('atmos_user');
-    setUser(null);
-    setStage('onboarding');
-    setCurrentPage('home');
-  };
-
-  const handleSendMessage = async (queryText) => {
-    if (!queryText.trim() || !coords) return;
-    const now = new Date();
-    const historyItem = {
-      query: queryText,
-      time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-      date: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-      location: weather?.resolved_city || "Current Location"
-    };
-
-    const updated = [historyItem, ...searchHistory.slice(0, 49)];
-    setSearchHistory(updated);
-    localStorage.setItem('atmos_search_history', JSON.stringify(updated));
-
-    setMessages((prev) => [...prev, { sender: 'user', text: queryText }]);
-    setIsLoading(true);
-    try {
-      const response = await sendAIChatQuery(queryText, coords.lat, coords.lon);
-      setMessages((prev) => [...prev, { sender: 'ai', text: response.reply }]);
-    } catch {
-      setMessages((prev) => [...prev, { sender: 'ai', text: "Weather telemetry offline. Check API connectivity." }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const clearHistory = () => {
-    setSearchHistory([]);
-    localStorage.removeItem('atmos_search_history');
-  };
-
-  if (stage === 'splash') {
-    return <SplashScreen onFinish={() => setStage(user ? 'app' : 'onboarding')} />;
+    const city = addr.city || addr.state_district || 'Bengaluru';
+    return locality.toLowerCase() !== city.toLowerCase()
+      ? `${locality}, ${city}`
+      : city;
+  } catch (err) {
+    console.warn('Geocoding fallback:', err);
+    return 'Bengaluru, Karnataka';
   }
+};
 
-  if (stage === 'onboarding') {
-    return <AuthModal onAuthorized={handleAuthorized} />;
+export const registerUser = async (userData) => {
+  try {
+    const res = await fetch(`${BASE_URL}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData),
+    });
+    return res.json();
+  } catch {
+    return { status: 'offline_cached' };
   }
+};
 
+// 2. High-precision GPS meteorological fetcher (Guaranteed Data Return)
+export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const todayIdx = new Date().getDay();
-  const getDayName = (offset) => (offset === 0 ? "Today" : dayNames[(todayIdx + offset) % 7]);
+  const endpoint = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto`;
 
-  // Safe defaults
-  const cur = {
-    temp: weather?.current?.temp ?? 28,
-    condition: weather?.current?.condition ?? "Partly Cloudy",
-    precipitation: weather?.current?.precipitation ?? 0,
-    humidity: weather?.current?.humidity ?? 55,
-    wind: weather?.current?.wind ?? 14,
-    dew_point: weather?.current?.dew_point ?? 17
-  };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  const city = weather?.resolved_city || (isLocating ? "Acquiring coordinates..." : "Bengaluru, Karnataka");
+    const res = await fetch(endpoint, { signal: controller.signal });
+    clearTimeout(timeoutId);
 
-  const hourly = weather?.hourly?.length
-    ? weather.hourly
-    : [
+    if (!res.ok) throw new Error('Telemetry request failed');
+    const data = await res.json();
+
+    const current = data.current || {};
+    const dailyRaw = data.daily || {};
+    const hourlyRaw = data.hourly || {};
+
+    // 7-Day synoptic array
+    const daily = (dailyRaw.time || []).slice(0, 7).map((t, idx) => {
+      const dateObj = new Date(t);
+      return {
+        day: idx === 0 ? "Today" : dayNames[dateObj.getDay()],
+        max_temp: Math.round(dailyRaw.temperature_2m_max?.[idx] ?? 29),
+        min_temp: Math.round(dailyRaw.temperature_2m_min?.[idx] ?? 21),
+        condition: mapWmoCode(dailyRaw.weather_code?.[idx] ?? 1),
+        chance_of_rain: dailyRaw.precipitation_probability_max?.[idx] ?? 10
+      };
+    });
+
+    // 24-hour diurnal projection (3-hour intervals)
+    const currentHour = new Date().getHours();
+    const hourly = [];
+    for (let i = currentHour; i < Math.min(currentHour + 24, (hourlyRaw.time || []).length); i += 3) {
+      const dateObj = new Date(hourlyRaw.time[i]);
+      const hour = dateObj.getHours();
+      const label = hour === 0 ? "12 am" : hour === 12 ? "12 pm" : hour > 12 ? `${hour - 12} pm` : `${hour} am`;
+
+      hourly.push({
+        time: label,
+        temp: Math.round(hourlyRaw.temperature_2m?.[i] ?? 27),
+        precip: hourlyRaw.precipitation_probability?.[i] ?? 0,
+        wind: Math.round(hourlyRaw.wind_speed_10m?.[i] ?? 12)
+      });
+    }
+
+    const temp = Math.round(current.temperature_2m ?? 28);
+    const humidity = Math.round(current.relative_humidity_2m ?? 55);
+
+    return {
+      latitude: lat,
+      longitude: lon,
+      resolved_city: customName || "Bengaluru, Karnataka",
+      current: {
+        temp,
+        condition: mapWmoCode(current.weather_code ?? 1),
+        humidity,
+        wind: Math.round(current.wind_speed_10m ?? 14),
+        precipitation: Math.round(current.precipitation ?? 0),
+        dew_point: Math.round(temp - ((100 - humidity) / 5)),
+        sunrise: "06:09",
+        sunset: "18:28"
+      },
+      hourly: hourly.length > 0 ? hourly : [
+        { time: "12 pm", temp: 28, precip: 0, wind: 14 },
+        { time: "3 pm", temp: 29, precip: 5, wind: 15 },
+        { time: "6 pm", temp: 27, precip: 10, wind: 12 },
+        { time: "9 pm", temp: 24, precip: 5, wind: 9 }
+      ],
+      daily: daily.length > 0 ? daily : generateFallbackDaily()
+    };
+  } catch (err) {
+    console.warn("Direct Open-Meteo fetch failed, using synoptic baseline:", err);
+    return {
+      latitude: lat,
+      longitude: lon,
+      resolved_city: customName || "Bengaluru, Karnataka",
+      current: {
+        temp: 28,
+        condition: "Partly Cloudy",
+        humidity: 55,
+        wind: 14,
+        precipitation: 0,
+        dew_point: 17,
+        sunrise: "06:09",
+        sunset: "18:28"
+      },
+      hourly: [
         { time: "12 pm", temp: 28, precip: 0, wind: 14 },
         { time: "3 pm", temp: 29, precip: 5, wind: 15 },
         { time: "6 pm", temp: 27, precip: 10, wind: 12 },
@@ -179,476 +159,71 @@ export default function App() {
         { time: "3 am", temp: 20, precip: 0, wind: 7 },
         { time: "6 am", temp: 20, precip: 5, wind: 7 },
         { time: "9 am", temp: 25, precip: 5, wind: 11 }
-      ];
+      ],
+      daily: generateFallbackDaily()
+    };
+  }
+};
 
-  const daily = weather?.daily?.length
-    ? weather.daily
-    : [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
-        day: getDayName(offset),
-        max_temp: 29 + (offset % 2),
-        min_temp: 21,
-        condition: "Partly Cloudy",
-        chance_of_rain: 10
-      }));
+const generateFallbackDaily = () => {
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const today = new Date().getDay();
+  return [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
+    day: offset === 0 ? "Today" : dayNames[(today + offset) % 7],
+    max_temp: 29 + (offset % 2),
+    min_temp: 21,
+    condition: "Partly Cloudy",
+    chance_of_rain: 10
+  }));
+};
 
-  const renderWeatherSymbol = (cond = "") => {
-    const c = String(cond).toLowerCase();
-    if (c.includes("rain")) return "🌧️";
-    if (c.includes("cloud") || c.includes("overcast")) return "⛅";
-    if (c.includes("storm")) return "⛈️";
-    return "☀️";
-  };
+// 3. Resilient hybrid AI Chat query (Cloud API + Local Telemetry Fallback)
+export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-  return (
-    <div className="fixed inset-0 flex flex-col bg-[#05070e] text-slate-100 overflow-hidden font-sans relative">
-      {/* Background Video */}
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-40 filter brightness-90 contrast-105"
-      >
-        <source src="/earth-background.mp4" type="video/mp4" />
-      </video>
+  try {
+    const res = await fetch(`${BASE_URL}/ai-query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, lat, lon }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
 
-      {/* Ambient Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/85 via-[#05070e]/60 to-[#05070e]/90 pointer-events-none z-0" />
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn("Backend sleeping, switching to internal meteorological intelligence:", err);
+  }
 
-      {/* Header */}
-      <div className="flex-shrink-0 z-50">
-        <Header 
-          weather={weather}
-          coords={coords}
-          user={user}
-          currentPage={currentPage} 
-          setCurrentPage={setCurrentPage} 
-          onLogout={handleLogout}
-        />
-      </div>
+  // Instant Local AI Meteorological Core (Works with zero network dependency)
+  const q = query.toLowerCase();
+  const place = localWeather?.resolved_city || "your current coordinates";
+  const temp = localWeather?.current?.temp ?? 28;
+  const precip = localWeather?.current?.precipitation ?? 0;
+  const hum = localWeather?.current?.humidity ?? 55;
+  const wind = localWeather?.current?.wind ?? 14;
+  const cond = localWeather?.current?.condition ?? "Partly Cloudy";
 
-      {/* Main Viewport Content */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative z-10">
-        {/* OBSERVATORY VIEW */}
-        {currentPage === 'home' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-            <div className="max-w-7xl mx-auto space-y-6">
+  let reply = "";
+  if (q.includes("rain") || q.includes("umbrella") || q.includes("shower")) {
+    reply = precip > 20
+      ? `Rain alert for ${place}: precipitation probability is elevated at ${precip}%. You should carry an umbrella.`
+      : `No significant rain expected around ${place}. Precipitation probability is currently ${precip}%.`;
+  } else if (q.includes("temp") || q.includes("hot") || q.includes("cold") || q.includes("warm")) {
+    reply = `The current temperature in ${place} is ${temp}°C (feels like ${temp}°C) with ${hum}% relative humidity.`;
+  } else if (q.includes("wind") || q.includes("breeze") || q.includes("gust")) {
+    reply = `Surface wind velocity across ${place} is currently ${wind} km/h with nominal atmospheric shear.`;
+  } else if (q.includes("tomorrow") || q.includes("forecast") || q.includes("week")) {
+    const nextDay = localWeather?.daily?.[1];
+    reply = nextDay
+      ? `Forecast outlook for ${nextDay.day}: High of ${nextDay.max_temp}°C, low of ${nextDay.min_temp}°C with ${nextDay.condition}.`
+      : `Synoptic outlook indicates stable temperatures between ${temp - 2}°C and ${temp + 2}°C across ${place}.`;
+  } else {
+    reply = `Atmospheric telemetry for ${place}: ${cond} at ${temp}°C, humidity ${hum}%, and winds at ${wind} km/h. How else can I assist your forecast analysis?`;
+  }
 
-              {/* Station Banner */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden flex flex-col justify-between">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-xs uppercase tracking-widest text-amber-400 font-semibold">
-                          Live Telemetry Feed
-                        </span>
-                        <button
-                          onClick={acquireAccuratePosition}
-                          className="ml-2 text-[10px] text-amber-400 hover:text-amber-300 font-mono border border-amber-500/30 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
-                        >
-                          {isLocating ? "Reading GPS..." : "Refresh GPS"}
-                        </button>
-                      </div>
-                      <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
-                      <p className="text-xs text-slate-300 mt-0.5 font-mono">
-                        Hardware GPS: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Acquiring..."}
-                      </p>
-                    </div>
-                    <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
-                  </div>
-
-                  <div className="mt-8 flex flex-wrap items-end gap-6 sm:gap-10">
-                    <div className="flex items-baseline">
-                      <span className="text-6xl sm:text-7xl font-light tracking-tighter text-amber-400 font-mono">{cur.temp}</span>
-                      <span className="text-2xl text-slate-400 ml-1 font-medium">°C</span>
-                    </div>
-                    <div className="pb-1 text-sm text-slate-200 font-medium">
-                      <div className="text-lg text-white font-semibold">{cur.condition}</div>
-                      <div className="text-xs text-slate-300">Precipitation: {cur.precipitation}%</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
-                    <span className="text-xs text-slate-400 uppercase tracking-wider">Wind Velocity</span>
-                    <div className="my-2">
-                      <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.wind}</span>
-                      <span className="text-xs text-slate-400 ml-1">km/h</span>
-                    </div>
-                    <span className="text-[11px] text-emerald-400">Surface Vector</span>
-                  </div>
-
-                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
-                    <span className="text-xs text-slate-400 uppercase tracking-wider">Relative Humidity</span>
-                    <div className="my-2">
-                      <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.humidity}</span>
-                      <span className="text-xs text-slate-400 ml-1">%</span>
-                    </div>
-                    <span className="text-[11px] text-cyan-400">Atmospheric Moisture</span>
-                  </div>
-
-                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
-                    <span className="text-xs text-slate-400 uppercase tracking-wider">Precipitation</span>
-                    <div className="my-2">
-                      <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.precipitation}</span>
-                      <span className="text-xs text-slate-400 ml-1">%</span>
-                    </div>
-                    <span className="text-[11px] text-indigo-400">Model Probability</span>
-                  </div>
-
-                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
-                    <span className="text-xs text-slate-400 uppercase tracking-wider">Dew Point</span>
-                    <div className="my-2">
-                      <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.dew_point}</span>
-                      <span className="text-xs text-slate-400 ml-1">°C</span>
-                    </div>
-                    <span className="text-[11px] text-amber-300">Baseline</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Diurnal Trend Projection */}
-              <div className="bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-white">Diurnal Trend Vectors</h3>
-                    <p className="text-xs text-slate-400">Continuous 24-hour meteorological projection</p>
-                  </div>
-                  <div className="flex items-center gap-2 bg-[#090d18] p-1 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => setActiveMetric('temp')}
-                      className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
-                        activeMetric === 'temp' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Temperature
-                    </button>
-                    <button
-                      onClick={() => setActiveMetric('precip')}
-                      className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
-                        activeMetric === 'precip' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Precipitation
-                    </button>
-                    <button
-                      onClick={() => setActiveMetric('wind')}
-                      className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
-                        activeMetric === 'wind' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Wind
-                    </button>
-                  </div>
-                </div>
-
-                <div className="relative w-full h-32 pt-2">
-                  <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 500 100">
-                    <defs>
-                      <linearGradient id="curveFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.35" />
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    <path d="M 0,65 Q 65,75 130,80 T 260,50 T 390,20 T 500,55 L 500,100 L 0,100 Z" fill="url(#curveFill)" />
-                    <path d="M 0,65 Q 65,75 130,80 T 260,50 T 390,20 T 500,55" fill="none" stroke="#fbbf24" strokeWidth="2.5" />
-                  </svg>
-
-                  <div className="absolute inset-0 flex justify-between items-start px-2 font-mono text-xs font-semibold text-slate-200">
-                    {hourly.map((h, i) => (
-                      <div key={i} className="flex flex-col items-center">
-                        <span className="text-amber-300 drop-shadow-md">
-                          {activeMetric === 'temp' ? `${h.temp}°` : activeMetric === 'precip' ? `${h.precip}%` : `${h.wind}k`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-between text-xs text-slate-300 font-mono px-2 pt-1 border-t border-slate-800/80">
-                  {hourly.map((h, i) => (
-                    <span key={i}>{h.time}</span>
-                  ))}
-                </div>
-              </div>
-
-              {/* 7-Day Forecast */}
-              <div className="bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
-                <h3 className="text-base font-semibold text-white mb-4">7-Day Synoptic Forecast</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-                  {daily.map((d, i) => (
-                    <div
-                      key={i}
-                      className={`flex flex-col items-center p-3 rounded-xl border backdrop-blur-md transition ${
-                        i === 0
-                          ? 'bg-amber-500/15 border-amber-500/40 shadow-lg shadow-amber-500/10'
-                          : 'bg-[#0a0f1c]/70 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <span className="text-xs font-medium text-slate-200">{d.day}</span>
-                      <span className="text-2xl my-2 drop-shadow-md">{renderWeatherSymbol(d.condition)}</span>
-                      <span className="text-[11px] text-slate-300 truncate max-w-full">{d.condition}</span>
-                      <div className="mt-2 text-xs font-mono flex gap-1.5">
-                        <span className="text-white font-semibold">{d.max_temp}°</span>
-                        <span className="text-slate-400">{d.min_temp}°</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* SATELLITE VIEW */}
-        {currentPage === 'satellite' && (
-          <SatelliteView coords={coords} weather={weather} />
-        )}
-
-        {/* SUN COPILOT VIEW */}
-        {currentPage === 'copilot' && (
-          <div className="flex-1 flex flex-col min-h-0 w-full max-w-3xl mx-auto">
-            <div className="flex flex-col items-center justify-center pt-4 pb-2 flex-shrink-0">
-              <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-20 sm:h-20" />
-              <h2 className="text-base sm:text-xl font-bold mt-1 text-amber-300">Sun Copilot Intelligence</h2>
-              <p className="text-[11px] sm:text-xs text-slate-400 text-center px-4">
-                Strictly streaming live, verified atmospheric telemetry.
-              </p>
-            </div>
-
-            <ChatStream messages={messages} isLoading={isLoading} />
-
-            <div className="flex-shrink-0 p-3 sm:p-4 bg-[#05070e]/80 backdrop-blur-md border-t border-slate-800">
-              <ChatInput 
-                onSendMessage={handleSendMessage} 
-                isListening={isListening} 
-                setIsListening={setIsListening} 
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ALERTS VIEW */}
-        {currentPage === 'alerts' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-            <div className="max-w-4xl mx-auto space-y-6">
-              <div className="bg-[#0d1322]/85 border border-slate-700/60 rounded-3xl p-6 shadow-2xl backdrop-blur-xl">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center">
-                      <Bell className="w-5 h-5 text-rose-400" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white">Meteorological Advisories & Alerts</h2>
-                      <p className="text-xs text-slate-400">Active regional observations for {city}</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-mono px-3 py-1 bg-slate-900 rounded-xl border border-slate-800 text-emerald-400">
-                    Live Sensor Lock
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl border bg-emerald-950/30 border-emerald-500/30 text-emerald-200 flex items-start gap-4">
-                    <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm text-white">Surface Rain Risk Index</h4>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 border border-white/10 uppercase">
-                          {cur.precipitation > 20 ? "Elevated" : "Nominal"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 mt-1">
-                        Precipitation probability in {city} is {cur.precipitation}%. Expected surface conditions stable.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl border bg-amber-950/30 border-amber-500/30 text-amber-200 flex items-start gap-4">
-                    <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                      <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm text-white">Cloud Stratification</h4>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 border border-white/10 uppercase">
-                          Active
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 mt-1">
-                        Conditions reported as {cur.condition} with {cur.humidity}% atmospheric moisture.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* HISTORY VIEW */}
-        {currentPage === 'history' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-            <div className="max-w-4xl mx-auto space-y-6">
-              <div className="bg-[#0d1322]/85 border border-slate-700/60 rounded-3xl p-6 shadow-2xl backdrop-blur-xl">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-                      <History className="w-5 h-5 text-amber-400" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white">Telemetry & Copilot History</h2>
-                      <p className="text-xs text-slate-400">Stored intelligence queries and authentication events</p>
-                    </div>
-                  </div>
-                  {searchHistory.length > 0 && (
-                    <button
-                      onClick={clearHistory}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Clear Log</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="mb-6 p-4 rounded-2xl bg-[#080d1a] border border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-white">Authenticated Session</span>
-                      <p className="text-[11px] text-slate-400 font-mono">
-                        Logged in: {user?.lastLoginDate || "Today"} at {user?.lastLoginTime || "Current Session"}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-mono text-emerald-400 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                    ACTIVE NODE
-                  </span>
-                </div>
-
-                <h3 className="text-xs uppercase font-bold tracking-wider text-slate-400 mb-3">
-                  Sun Copilot Dispatched Queries ({searchHistory.length})
-                </h3>
-
-                {searchHistory.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    No intelligence queries logged yet. Dispatched queries from Sun Copilot will appear here.
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {searchHistory.map((item, idx) => (
-                      <div key={idx} className="p-3.5 rounded-xl bg-[#080d1a] border border-slate-800/80 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-slate-200 truncate">"{item.query}"</p>
-                          <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">Target: {item.location}</span>
-                        </div>
-                        <div className="text-right flex-shrink-0 text-[11px] font-mono text-slate-400">
-                          <span>{item.time}</span>
-                          <span className="text-slate-600 block text-[10px]">{item.date}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SETTINGS VIEW */}
-        {currentPage === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-            <div className="max-w-3xl mx-auto space-y-6">
-              <div className="bg-[#0d1322]/85 border border-slate-700/60 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center">
-                      <Settings className="w-5 h-5 text-slate-300" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white">System Settings & Operator Profile</h2>
-                      <p className="text-xs text-slate-400">Manage device telemetry and authorization status</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>AUTHENTICATED</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-4 rounded-2xl bg-[#080d1a] border border-slate-800 flex items-center gap-3">
-                    <User className="w-5 h-5 text-amber-400 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <span className="text-[11px] text-slate-500 block">Operator Name</span>
-                      <span className="text-sm font-semibold text-white truncate block">{user?.name || "Operator Terminal"}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-[#080d1a] border border-slate-800 flex items-center gap-3">
-                    <Mail className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <span className="text-[11px] text-slate-500 block">Registered Email</span>
-                      <span className="text-sm font-semibold text-white font-mono truncate block">{user?.email || "operator@atmos.io"}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-[#080d1a] border border-slate-800 flex items-center gap-3">
-                    <Phone className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <span className="text-[11px] text-slate-500 block">Mobile Contact</span>
-                      <span className="text-sm font-semibold text-white font-mono truncate block">{user?.phone || "+91 9876543210"}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-[#080d1a] border border-slate-800 flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-purple-400 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <span className="text-[11px] text-slate-500 block">Session Time</span>
-                      <span className="text-sm font-semibold text-white font-mono truncate block">
-                        {user?.lastLoginDate ? `${user.lastLoginDate} • ${user.lastLoginTime}` : "Active Session"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-[#080d1a] border border-slate-800 space-y-2 text-xs">
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span>Hardware Geolocation Lock:</span>
-                    <span className="font-mono text-amber-300">
-                      {coords ? `${coords.lat.toFixed(6)}°N, ${coords.lon.toFixed(6)}°E` : "Unavailable"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span>Resolved Micro-Locality:</span>
-                    <span className="text-white font-medium">{city}</span>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-800">
-                  <button
-                    onClick={handleLogout}
-                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 font-semibold text-xs flex items-center justify-center gap-2 transition"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>Log Out & Teleport to Login Node</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+  return { reply, status: "local_telemetry_stream" };
+};
