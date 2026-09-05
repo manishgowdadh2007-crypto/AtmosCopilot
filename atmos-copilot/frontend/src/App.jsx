@@ -10,7 +10,7 @@ import { fetchWeatherTelemetry, reverseGeocodeCoordinates, sendAIChatQuery } fro
 
 export default function App() {
   const [stage, setStage] = useState('splash');
-  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'satellite' | 'copilot'
+  const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState(null);
   const [weather, setWeather] = useState(null);
   const [user, setUser] = useState(null);
@@ -22,12 +22,11 @@ export default function App() {
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
 
-  // Synchronize precise location and hyper-local telemetry
   const syncTelemetryLocation = async (lat, lon) => {
     setIsLocating(true);
-    const exactName = await reverseGeocodeCoordinates(lat, lon);
+    const resolvedName = await reverseGeocodeCoordinates(lat, lon);
     try {
-      const data = await fetchWeatherTelemetry(lat, lon, exactName);
+      const data = await fetchWeatherTelemetry(lat, lon, resolvedName);
       setWeather(data);
     } catch (err) {
       console.error("Telemetry sync failed:", err);
@@ -36,22 +35,32 @@ export default function App() {
     }
   };
 
+  // Pure hardware GPS polling - accepts only device coordinates
   const acquireAccuratePosition = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      alert("Geolocation hardware is not supported on this device.");
+      return;
+    }
     setIsLocating(true);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const fresh = {
+        const deviceCoords = {
           lat: parseFloat(pos.coords.latitude.toFixed(6)),
-          lon: parseFloat(pos.coords.longitude.toFixed(6))
+          lon: parseFloat(pos.coords.longitude.toFixed(6)),
         };
-        setCoords(fresh);
-        syncTelemetryLocation(fresh.lat, fresh.lon);
+        setCoords(deviceCoords);
+        syncTelemetryLocation(deviceCoords.lat, deviceCoords.lon);
       },
-      () => {
+      (err) => {
+        console.warn("Device GPS error:", err);
         setIsLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0 // Do not use stale or cached location
+      }
     );
   };
 
@@ -67,11 +76,11 @@ export default function App() {
   };
 
   const handleSendMessage = async (queryText) => {
-    if (!queryText.trim()) return;
+    if (!queryText.trim() || !coords) return;
     setMessages(prev => [...prev, { sender: 'user', text: queryText }]);
     setIsLoading(true);
     try {
-      const response = await sendAIChatQuery(queryText, coords?.lat || 12.97, coords?.lon || 77.59);
+      const response = await sendAIChatQuery(queryText, coords.lat, coords.lon);
       setMessages(prev => [...prev, { sender: 'ai', text: response.reply }]);
     } catch {
       setMessages(prev => [...prev, { sender: 'ai', text: "Weather telemetry offline. Check API connectivity." }]);
@@ -88,7 +97,6 @@ export default function App() {
     return <AuthModal onAuthorized={handleAuthorized} />;
   }
 
-  // Dynamic day-of-week calculation based on user's live system time
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const todayIdx = new Date().getDay();
 
@@ -97,18 +105,18 @@ export default function App() {
     return dayNames[(todayIdx + offset) % 7];
   };
 
-  // Dynamic telemetry fallbacks
-  const cur = weather?.current || { temp: 25, condition: "Partly Cloudy", precipitation: 18, humidity: 60, wind: 18 };
-  const city = weather?.resolved_city || "Detecting micro-locality...";
+  const cur = weather?.current || { temp: '--', condition: "Detecting...", precipitation: 0, humidity: 0, wind: 0 };
+  const city = weather?.resolved_city || (isLocating ? "Acquiring device GPS..." : "Waiting for GPS permission...");
+  
   const hourly = weather?.hourly?.length ? weather.hourly : [
-    { time: "12 am", temp: 21, precip: 10, wind: 12 },
-    { time: "3 am", temp: 20, precip: 15, wind: 10 },
-    { time: "6 am", temp: 20, precip: 12, wind: 9 },
-    { time: "9 am", temp: 24, precip: 8, wind: 14 },
-    { time: "12 pm", temp: 28, precip: 20, wind: 18 },
-    { time: "3 pm", temp: 31, precip: 25, wind: 22 },
-    { time: "6 pm", temp: 29, precip: 18, wind: 16 },
-    { time: "9 pm", temp: 26, precip: 15, wind: 12 }
+    { time: "12 am", temp: 21, precip: 0, wind: 10 },
+    { time: "3 am", temp: 20, precip: 0, wind: 9 },
+    { time: "6 am", temp: 20, precip: 0, wind: 8 },
+    { time: "9 am", temp: 24, precip: 0, wind: 12 },
+    { time: "12 pm", temp: 28, precip: 0, wind: 15 },
+    { time: "3 pm", temp: 30, precip: 0, wind: 16 },
+    { time: "6 pm", temp: 28, precip: 0, wind: 14 },
+    { time: "9 pm", temp: 25, precip: 0, wind: 11 }
   ];
 
   const daily = (weather?.daily && weather.daily.length > 0)
@@ -118,9 +126,9 @@ export default function App() {
       }))
     : [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
         day: getDayName(offset),
-        max_temp: 31,
-        min_temp: 21,
-        condition: "Partly Cloudy"
+        max_temp: '--',
+        min_temp: '--',
+        condition: "Syncing"
       }));
 
   const renderWeatherSymbol = (cond = "") => {
@@ -133,7 +141,6 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#080b14] text-slate-100 overflow-hidden font-sans">
-      {/* 1. Universal Pinned Header */}
       <div className="flex-shrink-0 z-50">
         <Header 
           weather={weather}
@@ -144,31 +151,29 @@ export default function App() {
         />
       </div>
 
-      {/* 2. Primary Surface */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {currentPage === 'home' && (
-          /* Observatory Telemetry Deck */
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Station Hero Banner with Precision Calibration */}
+              {/* Station Hero Banner */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md relative overflow-hidden flex flex-col justify-between">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold">Live Telemetry Feed</span>
+                        <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold">Live GPS Telemetry Feed</span>
                         <button
                           onClick={acquireAccuratePosition}
                           className="ml-2 text-[10px] text-amber-400 hover:text-amber-300 font-mono border border-amber-500/30 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
                         >
-                          {isLocating ? "Calibrating..." : "Calibrate GPS"}
+                          {isLocating ? "Reading GPS..." : "Refresh GPS"}
                         </button>
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Resolving telemetry coordinates..."}
+                      <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                        {coords ? `${coords.lat.toFixed(6)}°N, ${coords.lon.toFixed(6)}°E (Device Sensor)` : "Acquiring hardware GPS lock..."}
                       </p>
                     </div>
                     <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
@@ -181,12 +186,11 @@ export default function App() {
                     </div>
                     <div className="pb-1 text-sm text-slate-300 font-medium">
                       <div className="text-lg text-white font-semibold">{cur.condition}</div>
-                      <div className="text-xs text-slate-400">Precipitation Probability: {cur.precipitation}%</div>
+                      <div className="text-xs text-slate-400">Precipitation: {cur.precipitation}%</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Sub-Metric Panels */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
                     <span className="text-xs text-slate-400 uppercase tracking-wider">Wind Velocity</span>
@@ -194,7 +198,7 @@ export default function App() {
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.wind}</span>
                       <span className="text-xs text-slate-400 ml-1">km/h</span>
                     </div>
-                    <span className="text-[11px] text-emerald-400">Moderate Vector</span>
+                    <span className="text-[11px] text-emerald-400">Surface Vector</span>
                   </div>
 
                   <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
@@ -203,7 +207,7 @@ export default function App() {
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.humidity}</span>
                       <span className="text-xs text-slate-400 ml-1">%</span>
                     </div>
-                    <span className="text-[11px] text-cyan-400">Atmospheric Saturation</span>
+                    <span className="text-[11px] text-cyan-400">Atmospheric Moisture</span>
                   </div>
 
                   <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
@@ -212,16 +216,16 @@ export default function App() {
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.precipitation}</span>
                       <span className="text-xs text-slate-400 ml-1">%</span>
                     </div>
-                    <span className="text-[11px] text-indigo-400">Cloud Radar Estimate</span>
+                    <span className="text-[11px] text-indigo-400">Model Probability</span>
                   </div>
 
                   <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
                     <span className="text-xs text-slate-400 uppercase tracking-wider">Dew Point</span>
                     <div className="my-2">
-                      <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">18</span>
+                      <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.dew_point ?? '--'}</span>
                       <span className="text-xs text-slate-400 ml-1">°C</span>
                     </div>
-                    <span className="text-[11px] text-amber-300">Comfort Baseline</span>
+                    <span className="text-[11px] text-amber-300">Baseline</span>
                   </div>
                 </div>
               </div>
@@ -261,7 +265,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Spline Area Canvas */}
                 <div className="relative w-full h-32 pt-2">
                   <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 500 100">
                     <defs>
@@ -282,7 +285,6 @@ export default function App() {
                     />
                   </svg>
 
-                  {/* Hourly Nodes Overlay */}
                   <div className="absolute inset-0 flex justify-between items-start px-2 font-mono text-xs font-semibold text-slate-200">
                     {hourly.map((h, i) => (
                       <div key={i} className="flex flex-col items-center">
@@ -294,7 +296,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Timeline Axis */}
                 <div className="flex justify-between text-xs text-slate-400 font-mono px-2 pt-1 border-t border-slate-800/60">
                   {hourly.map((h, i) => (
                     <span key={i}>{h.time}</span>
@@ -336,7 +337,6 @@ export default function App() {
         )}
 
         {currentPage === 'copilot' && (
-          /* Sun Copilot Intelligence Chat View */
           <div className="flex-1 flex flex-col min-h-0 w-full max-w-3xl mx-auto">
             <div className="flex flex-col items-center justify-center pt-4 pb-2 flex-shrink-0">
               <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-20 sm:h-20" />
