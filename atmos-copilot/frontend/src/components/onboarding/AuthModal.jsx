@@ -13,53 +13,49 @@ export default function AuthModal({ onAuthorized }) {
     setErrorMsg(null);
 
     if (!navigator.geolocation) {
-      setErrorMsg("Geolocation hardware is required for hyper-local forecasting.");
+      setErrorMsg("GPS hardware is unavailable on this device.");
       setIsLoading(false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        // High-precision coordinates rounded to 6 decimals (sub-meter resolution)
-        const coords = {
+        const accurateCoords = {
           lat: parseFloat(pos.coords.latitude.toFixed(6)),
           lon: parseFloat(pos.coords.longitude.toFixed(6)),
-          accuracy: pos.coords.accuracy
+          accuracy: pos.coords.accuracy,
         };
 
-        // Request Microphone Access
-        try {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch (err) {
-          console.warn("Microphone not approved, voice queries will be limited.");
-        }
+        const userData = {
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+        };
 
-        // Store to backend SQLite database
+        // 1. Persist directly to device storage so credentials never disappear
+        localStorage.setItem('atmos_user', JSON.stringify(userData));
+
+        // 2. Dispatch to backend API
         try {
-          await registerUser({ ...formData, latitude: coords.lat, longitude: coords.lon });
+          await registerUser({ ...userData, latitude: accurateCoords.lat, longitude: accurateCoords.lon });
         } catch (err) {
-          console.warn("Continuing session offline:", err);
+          console.warn("Backend registration sync warning (continuing locally):", err);
         }
 
         setIsLoading(false);
-        onAuthorized(coords);
+        onAuthorized(accurateCoords, userData);
       },
       (err) => {
-        console.warn("Precise GPS acquisition failed:", err);
-        setErrorMsg("Precise location is mandatory: " + err.message);
+        setErrorMsg("Location access required: " + err.message);
         setIsLoading(false);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0 // Bypasses stale cached coordinates
-      }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
   return (
-    <div className="h-screen w-screen bg-slate-950 flex items-center justify-center p-4 text-white font-sans">
-      <form onSubmit={handleSubmit} className="max-w-md w-full bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-5">
+    <div className="h-screen w-screen bg-[#070a13] flex items-center justify-center p-4 text-white font-sans">
+      <form onSubmit={handleSubmit} className="max-w-md w-full bg-[#0d1220] border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-5">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-slate-100">Access Telemetry Node</h2>
           <p className="text-xs text-slate-400 mt-1">Provide credentials to initialize live hyper-local observation feeds.</p>
@@ -78,10 +74,10 @@ export default function AuthModal({ onAuthorized }) {
             <input 
               required 
               type="text" 
-              placeholder="Arya Patel" 
+              placeholder="e.g. Manish Gowda" 
               value={formData.name} 
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 text-white"
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 text-white"
             />
           </div>
           <div>
@@ -89,10 +85,10 @@ export default function AuthModal({ onAuthorized }) {
             <input 
               required 
               type="email" 
-              placeholder="arya.patel@domain.in" 
+              placeholder="name@domain.com" 
               value={formData.email} 
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 text-white"
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 text-white"
             />
           </div>
           <div>
@@ -102,26 +98,26 @@ export default function AuthModal({ onAuthorized }) {
               type="tel" 
               placeholder="+91 9876543210" 
               value={formData.phone} 
-              onChange={(e) => setFormData({...formData, phone: e.target.value})}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 text-white"
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 text-white"
             />
           </div>
         </div>
 
         <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-3 text-[11px] text-amber-200">
           <ShieldCheck className="w-5 h-5 flex-shrink-0 text-amber-400" />
-          <span>Requires GPS coordinates and microphone access to power the live Sun AI Copilot.</span>
+          <span>Device satellite GPS is verified to lock hyper-local telemetry.</span>
         </div>
 
         <button 
           type="submit" 
           disabled={isLoading}
-          className="w-full bg-gradient-to-r from-blue-600 to-amber-500 hover:opacity-90 font-semibold py-3.5 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full bg-gradient-to-r from-blue-600 to-amber-500 hover:opacity-90 font-semibold py-3.5 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-2 disabled:opacity-50 text-white"
         >
           {isLoading ? (
-            <span className="inline-block w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
-            "Authorize & Launch"
+            "Authorize & Lock Telemetry"
           )}
         </button>
       </form>
