@@ -32,15 +32,12 @@ export default function App() {
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
 
-  // Non-blocking telemetry sync: weather renders immediately without waiting for geocode
   const syncTelemetryLocation = async (lat, lon) => {
     setIsLocating(true);
     try {
-      // 1. Fetch weather telemetry immediately
       const weatherData = await fetchWeatherTelemetry(lat, lon);
       setWeather(weatherData);
 
-      // 2. Resolve micro-locality in background
       reverseGeocodeCoordinates(lat, lon).then((cityName) => {
         if (cityName) {
           setWeather((prev) => (prev ? { ...prev, resolved_city: cityName } : prev));
@@ -53,7 +50,6 @@ export default function App() {
     }
   };
 
-  // Hardware GPS Polling with automatic Desktop/WiFi fallback
   const acquireAccuratePosition = () => {
     setIsLocating(true);
 
@@ -79,14 +75,13 @@ export default function App() {
       },
       {
         enableHighAccuracy: true,
-        timeout: 6000, // Do not stall the UI longer than 6 seconds
-        maximumAge: 60000 // Accept recent fixes to avoid unnecessary stalls
+        timeout: 6000,
+        maximumAge: 60000
       }
     );
   };
 
   useEffect(() => {
-    // Initial fetch on mount guarantees forecast data is immediately available
     syncTelemetryLocation(12.9716, 77.5946);
     acquireAccuratePosition();
   }, []);
@@ -175,7 +170,22 @@ export default function App() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#080b14] text-slate-100 overflow-hidden font-sans">
+    <div className="fixed inset-0 flex flex-col bg-[#05070e] text-slate-100 overflow-hidden font-sans relative">
+      {/* 1. Full-Screen Seamless Background Video */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-45 filter brightness-90 contrast-105"
+      >
+        <source src="/earth-background.mp4" type="video/mp4" />
+      </video>
+
+      {/* 2. Soft Ambient Vignette Overlay for Readability */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/85 via-[#05070e]/60 to-[#05070e]/90 pointer-events-none z-0" />
+
+      {/* 3. Pinned Header Component */}
       <div className="flex-shrink-0 z-50">
         <Header 
           weather={weather}
@@ -186,14 +196,15 @@ export default function App() {
         />
       </div>
 
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {/* 4. Foreground Content Layers */}
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative z-10">
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
               {/* Station Hero Banner */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md relative overflow-hidden flex flex-col justify-between">
+                <div className="lg:col-span-2 bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden flex flex-col justify-between">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
@@ -209,7 +220,7 @@ export default function App() {
                         </button>
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
-                      <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                      <p className="text-xs text-slate-300 mt-0.5 font-mono">
                         Hardware GPS: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Acquiring..."}
                       </p>
                     </div>
@@ -221,15 +232,15 @@ export default function App() {
                       <span className="text-6xl sm:text-7xl font-light tracking-tighter text-amber-400 font-mono">{cur.temp}</span>
                       <span className="text-2xl text-slate-400 ml-1 font-medium">°C</span>
                     </div>
-                    <div className="pb-1 text-sm text-slate-300 font-medium">
+                    <div className="pb-1 text-sm text-slate-200 font-medium">
                       <div className="text-lg text-white font-semibold">{cur.condition}</div>
-                      <div className="text-xs text-slate-400">Precipitation: {cur.precipitation}%</div>
+                      <div className="text-xs text-slate-300">Precipitation: {cur.precipitation}%</div>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
+                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
                     <span className="text-xs text-slate-400 uppercase tracking-wider">Wind Velocity</span>
                     <div className="my-2">
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.wind}</span>
@@ -238,7 +249,7 @@ export default function App() {
                     <span className="text-[11px] text-emerald-400">Surface Vector</span>
                   </div>
 
-                  <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
+                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
                     <span className="text-xs text-slate-400 uppercase tracking-wider">Relative Humidity</span>
                     <div className="my-2">
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.humidity}</span>
@@ -247,7 +258,7 @@ export default function App() {
                     <span className="text-[11px] text-cyan-400">Atmospheric Moisture</span>
                   </div>
 
-                  <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
+                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
                     <span className="text-xs text-slate-400 uppercase tracking-wider">Precipitation</span>
                     <div className="my-2">
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.precipitation}</span>
@@ -256,7 +267,7 @@ export default function App() {
                     <span className="text-[11px] text-indigo-400">Model Probability</span>
                   </div>
 
-                  <div className="bg-[#101524]/70 border border-slate-800/70 rounded-2xl p-4 flex flex-col justify-between">
+                  <div className="bg-[#0d1322]/70 border border-slate-700/60 rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl shadow-lg">
                     <span className="text-xs text-slate-400 uppercase tracking-wider">Dew Point</span>
                     <div className="my-2">
                       <span className="text-2xl sm:text-3xl font-semibold font-mono text-white">{cur.dew_point ?? 17}</span>
@@ -268,7 +279,7 @@ export default function App() {
               </div>
 
               {/* Diurnal Trend Vectors */}
-              <div className="bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-4">
+              <div className="bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
                   <div>
                     <h3 className="text-base font-semibold text-white">Diurnal Trend Vectors</h3>
@@ -306,7 +317,7 @@ export default function App() {
                   <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 500 100">
                     <defs>
                       <linearGradient id="curveFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.35" />
                         <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
                       </linearGradient>
                     </defs>
@@ -325,7 +336,7 @@ export default function App() {
                   <div className="absolute inset-0 flex justify-between items-start px-2 font-mono text-xs font-semibold text-slate-200">
                     {hourly.map((h, i) => (
                       <div key={i} className="flex flex-col items-center">
-                        <span className="text-amber-300">
+                        <span className="text-amber-300 drop-shadow-md">
                           {activeMetric === 'temp' ? `${h.temp}°` : activeMetric === 'precip' ? `${h.precip}%` : `${h.wind}k`}
                         </span>
                       </div>
@@ -333,7 +344,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex justify-between text-xs text-slate-400 font-mono px-2 pt-1 border-t border-slate-800/60">
+                <div className="flex justify-between text-xs text-slate-300 font-mono px-2 pt-1 border-t border-slate-800/80">
                   {hourly.map((h, i) => (
                     <span key={i}>{h.time}</span>
                   ))}
@@ -341,24 +352,24 @@ export default function App() {
               </div>
 
               {/* 7-Day Synoptic Forecast Cards */}
-              <div className="bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+              <div className="bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
                 <h3 className="text-base font-semibold text-white mb-4">7-Day Synoptic Forecast</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
                   {daily.map((d, i) => (
                     <div
                       key={i}
-                      className={`flex flex-col items-center p-3 rounded-xl border transition ${
+                      className={`flex flex-col items-center p-3 rounded-xl border backdrop-blur-md transition ${
                         i === 0
-                          ? 'bg-amber-500/10 border-amber-500/30'
-                          : 'bg-[#0b0e18] border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-amber-500/15 border-amber-500/40 shadow-lg shadow-amber-500/10'
+                          : 'bg-[#0a0f1c]/70 border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      <span className="text-xs font-medium text-slate-300">{d.day}</span>
-                      <span className="text-2xl my-2">{renderWeatherSymbol(d.condition)}</span>
-                      <span className="text-[11px] text-slate-400 truncate max-w-full">{d.condition}</span>
+                      <span className="text-xs font-medium text-slate-200">{d.day}</span>
+                      <span className="text-2xl my-2 drop-shadow-md">{renderWeatherSymbol(d.condition)}</span>
+                      <span className="text-[11px] text-slate-300 truncate max-w-full">{d.condition}</span>
                       <div className="mt-2 text-xs font-mono flex gap-1.5">
                         <span className="text-white font-semibold">{d.max_temp}°</span>
-                        <span className="text-slate-500">{d.min_temp}°</span>
+                        <span className="text-slate-400">{d.min_temp}°</span>
                       </div>
                     </div>
                   ))}
@@ -387,7 +398,7 @@ export default function App() {
 
             <ChatStream messages={messages} isLoading={isLoading} />
 
-            <div className="flex-shrink-0 p-3 sm:p-4 bg-[#080b14] border-t border-slate-800">
+            <div className="flex-shrink-0 p-3 sm:p-4 bg-[#05070e]/80 backdrop-blur-md border-t border-slate-800">
               <ChatInput 
                 onSendMessage={handleSendMessage} 
                 isListening={isListening} 
