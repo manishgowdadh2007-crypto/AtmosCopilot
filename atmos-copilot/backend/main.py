@@ -240,3 +240,45 @@ async def copilot_intelligence(req: QueryRequest):
         reply = f"IMD Bengaluru Observation: {cur.get('condition')} at {temp}°C, winds {wind_dir} at {wind} km/h."
 
     return {"reply": reply, "telemetry": telemetry}
+from fastapi.responses import Response
+
+@app.get("/api/imd-radar")
+async def get_imd_radar_proxy():
+    """Streams official IMD Bengaluru Doppler Weather Radar (DWR) without CORS/hotlink blocks."""
+    imd_radar_urls = [
+        "https://mausam.imd.gov.in/Radar/BLR_MAXZ.gif",
+        "https://mausam.imd.gov.in/Radar/dist_bengaluru.gif",
+        "https://mausam.imd.gov.in/Radar/BLR_PAC.gif",
+        "https://internal.imd.gov.in/section/dwr/img/radar/BLR_MAXZ.gif"
+    ]
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": "https://mausam.imd.gov.in/bengaluru/",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+    }
+
+    async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+        for url in imd_radar_urls:
+            try:
+                res = await client.get(url, headers=headers)
+                if res.status_code == 200 and len(res.content) > 1000:
+                    return Response(
+                        content=res.content, 
+                        media_type="image/gif",
+                        headers={
+                            "Cache-Control": "no-cache, no-store, must-revalidate",
+                            "Access-Control-Allow-Origin": "*"
+                        }
+                    )
+            except Exception as e:
+                print(f"Failed fetching {url}: {e}")
+
+    # Fallback to high-resolution live animated Bengaluru Doppler radar tile if IMD portal is undergoing maintenance
+    radar_fallback = "https://tilecache.rainviewer.com/v2/radar/nowcast_10/512/7/93/60/2/1_1.png"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            res = await client.get(radar_fallback)
+            return Response(content=res.content, media_type="image/png")
+        except Exception:
+            return Response(status_code=404)
