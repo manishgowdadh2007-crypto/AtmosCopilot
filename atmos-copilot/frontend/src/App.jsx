@@ -80,7 +80,7 @@ export default function App() {
         syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("GPS lock error, defaulting to station coords:", err);
+        console.warn("GPS lock error, defaulting to Bengaluru:", err);
         const fallback = { lat: 12.9716, lon: 77.5946 };
         setCoords(fallback);
         syncTelemetryLocation(fallback.lat, fallback.lon);
@@ -198,20 +198,21 @@ export default function App() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#05070e] text-slate-100 overflow-hidden font-sans relative">
+    <div className="fixed inset-0 flex flex-col bg-[#05070e] text-slate-100 overflow-hidden font-sans">
+      {/* Atmospheric Background Layer */}
       <video
         autoPlay
         loop
         muted
         playsInline
         onError={(e) => (e.currentTarget.style.display = 'none')}
-        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-40 filter brightness-90 contrast-105"
+        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-35 filter brightness-90 contrast-105"
       >
         <source src="/earth-background.mp4" type="video/mp4" />
       </video>
+      <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/90 via-[#05070e]/75 to-[#05070e]/95 pointer-events-none z-0" />
 
-      <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/85 via-[#05070e]/60 to-[#05070e]/90 pointer-events-none z-0" />
-
+      {/* Header Bar */}
       <div className="flex-shrink-0 z-50">
         <Header 
           weather={weather}
@@ -223,7 +224,12 @@ export default function App() {
         />
       </div>
 
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative z-10">
+      {/* Main Container */}
+      <main 
+        className="flex-1 flex flex-col min-h-0 overflow-hidden relative z-10"
+        style={{ height: "calc(100vh - 64px)" }}
+      >
+        {/* OBSERVATORY */}
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
@@ -389,30 +395,36 @@ export default function App() {
                   ))}
                 </div>
               </div>
-
             </div>
           </div>
         )}
 
+        {/* SATELLITE */}
         {currentPage === 'satellite' && (
-          <SatelliteView coords={coords} weather={weather} />
+          <div className="w-full h-full flex-1 overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
+            <SatelliteView coords={coords} weather={weather} />
+          </div>
         )}
 
+        {/* SUN COPILOT */}
         {currentPage === 'copilot' && (
-          <div className="flex-1 flex flex-col h-full min-h-0 w-full max-w-3xl mx-auto overflow-hidden">
-            <div className="flex flex-col items-center justify-center pt-4 pb-2 flex-shrink-0">
+          <div 
+            className="w-full max-w-3xl mx-auto flex flex-col justify-between h-full overflow-hidden"
+            style={{ height: "calc(100vh - 64px)" }}
+          >
+            <div className="flex flex-col items-center justify-center pt-3 pb-1 flex-shrink-0">
               <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-16 sm:h-16" />
-              <h2 className="text-base sm:text-xl font-bold mt-1 text-amber-300">Sun Copilot Intelligence</h2>
-              <p className="text-[11px] sm:text-xs text-slate-400 text-center px-4">
+              <h2 className="text-base sm:text-lg font-bold mt-1 text-amber-300">Sun Copilot Intelligence</h2>
+              <p className="text-[11px] text-slate-400 text-center px-4">
                 Strictly streaming live, verified atmospheric telemetry.
               </p>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-3">
               <ChatStream messages={messages} isLoading={isLoading} />
             </div>
 
-            <div className="flex-shrink-0 p-3 sm:p-4 bg-[#05070e]/95 backdrop-blur-xl border-t border-slate-800/80">
+            <div className="flex-shrink-0 p-3 sm:p-4 bg-[#05070e]/95 backdrop-blur-xl border-t border-slate-800/80 mt-auto">
               <ChatInput 
                 onSendMessage={handleSendMessage} 
                 isListening={isListening} 
@@ -423,6 +435,7 @@ export default function App() {
           </div>
         )}
 
+        {/* ALERTS */}
         {currentPage === 'alerts' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-4xl mx-auto space-y-6">
@@ -482,6 +495,7 @@ export default function App() {
           </div>
         )}
 
+        {/* HISTORY */}
         {currentPage === 'history' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-4xl mx-auto space-y-6">
@@ -553,6 +567,7 @@ export default function App() {
           </div>
         )}
 
+        {/* SETTINGS */}
         {currentPage === 'settings' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-3xl mx-auto space-y-6">
