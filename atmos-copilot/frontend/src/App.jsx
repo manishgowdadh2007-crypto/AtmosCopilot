@@ -176,7 +176,9 @@ export default function App() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold">Live GPS Telemetry Feed</span>
+                        <span className="text-xs uppercase tracking-widest text-amber-400 font-semibold">
+                          IMD Bengaluru RMC Feed
+                        </span>
                         <button
                           onClick={acquireAccuratePosition}
                           className="ml-2 text-[10px] text-amber-400 hover:text-amber-300 font-mono border border-amber-500/30 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
@@ -186,7 +188,7 @@ export default function App() {
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
                       <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                        {coords ? `${coords.lat.toFixed(6)}°N, ${coords.lon.toFixed(6)}°E (Device Sensor)` : "Acquiring hardware GPS lock..."}
+                        Source: India Meteorological Department • {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Observatory Link"}
                       </p>
                     </div>
                     <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
@@ -371,16 +373,7 @@ export default function App() {
                 disabled={isLoading}
               />
             </div>
-          </div><span className="text-xs uppercase tracking-widest text-amber-400 font-semibold">
-  IMD Bengaluru RMC Feed
-</span>
-<h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">
-  {city}
-</h2>
-<p className="text-xs text-slate-400 mt-0.5 font-mono">
-  Source: India Meteorological Department • {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Observatory Link"}
-</p>
-
+          </div>
         )}
       </main>
     </div>
