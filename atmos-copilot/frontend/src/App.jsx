@@ -13,7 +13,17 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState(null);
   const [weather, setWeather] = useState(null);
-  const [user, setUser] = useState(null);
+
+  // Initialize directly from saved device session
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('atmos_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeMetric, setActiveMetric] = useState('temp');
@@ -70,7 +80,10 @@ export default function App() {
 
   const handleAuthorized = (retrievedCoords, userData) => {
     setCoords(retrievedCoords);
-    if (userData) setUser(userData);
+    if (userData) {
+      setUser(userData);
+      localStorage.setItem('atmos_user', JSON.stringify(userData));
+    }
     setStage('app');
     syncTelemetryLocation(retrievedCoords.lat, retrievedCoords.lon);
   };
@@ -107,7 +120,7 @@ export default function App() {
 
   const cur = weather?.current || { temp: '--', condition: "Detecting...", precipitation: 0, humidity: 0, wind: 0 };
   const city = weather?.resolved_city || (isLocating ? "Acquiring device GPS..." : "Waiting for GPS permission...");
-  
+
   const hourly = weather?.hourly?.length ? weather.hourly : [
     { time: "12 am", temp: 21, precip: 0, wind: 10 },
     { time: "3 am", temp: 20, precip: 0, wind: 9 },
