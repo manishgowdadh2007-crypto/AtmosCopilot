@@ -8,7 +8,16 @@ const mapWmoCode = (code) => {
   if ([95, 96, 99].includes(code)) return "Thunderstorm";
   return "Partly Cloudy";
 };
-
+<video
+        autoPlay
+        loop
+        muted
+        playsInline
+        onError={(e) => (e.currentTarget.style.display = 'none')}
+        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-40 filter brightness-90 contrast-105"
+      >
+        <source src="/earth-background.mp4" type="video/mp4" />
+      </video>
 // 1. Client-side reverse geocoding with instant safety fallback
 export const reverseGeocodeCoordinates = async (lat, lon) => {
   try {
