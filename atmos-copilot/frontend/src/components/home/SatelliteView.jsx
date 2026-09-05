@@ -32,18 +32,18 @@ export default function SatelliteView({ coords, weather }) {
     if (activeLayer === "satellite") {
       return `https://www.rainviewer.com/map.html?loc=${lat},${lon},7&oFa=0&oc=1&layer=satellite&sm=1&sn=1`;
     }
-    return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=7&overlay=wind&level=surface&lat=${lat}&lon=${lon}`;
+    return `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%25&height=100%25&zoom=7&level=surface&overlay=wind&product=ecmwf&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`;
   };
 
   return (
-    <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none font-sans flex flex-col">
-      {/* Live Map Stream Frame */}
+    <div className="relative flex-1 w-full h-full min-h-0 bg-[#05070e] overflow-hidden select-none font-sans">
+      {/* Absolute Full-Screen Map Frame */}
       <iframe
         key={activeLayer}
         title="Atmospheric Telemetry Radar"
         src={getStreamUrl()}
-        className="w-full h-full border-0 filter contrast-110 saturate-125"
-        loading="lazy"
+        className="absolute inset-0 w-full h-full border-0 filter contrast-110 saturate-125"
+        allow="geolocation"
       />
 
       {/* Layer Switcher HUD */}
