@@ -198,7 +198,7 @@ export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
     console.warn("Backend sleeping, switching to internal meteorological intelligence:", err);
   }
 
-  // Instant Local AI Meteorological Core (Works with zero network dependency)
+  // Instant Local AI Meteorological Core (Zero network latency)
   const q = query.toLowerCase();
   const place = localWeather?.resolved_city || "your current coordinates";
   const temp = localWeather?.current?.temp ?? 28;
