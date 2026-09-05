@@ -9,7 +9,6 @@ import ChatInput from './components/copilot/ChatInput';
 import { fetchWeatherTelemetry, reverseGeocodeCoordinates, sendAIChatQuery } from './services/api';
 
 export default function App() {
-  // Check if user already registered previously
   const savedUser = (() => {
     try {
       const saved = localStorage.getItem('atmos_user');
@@ -20,10 +19,9 @@ export default function App() {
   })();
 
   const [user, setUser] = useState(savedUser);
-  // If user is already registered, skip onboarding directly into 'app'
   const [stage, setStage] = useState(savedUser ? 'app' : 'splash');
   const [currentPage, setCurrentPage] = useState('home');
-  const [coords, setCoords] = useState(null);
+  const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
   const [weather, setWeather] = useState(null);
 
   const [isListening, setIsListening] = useState(false);
@@ -34,87 +32,85 @@ export default function App() {
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
 
+  // Non-blocking telemetry sync: weather renders immediately without waiting for geocode
   const syncTelemetryLocation = async (lat, lon) => {
     setIsLocating(true);
     try {
-      // 1. Fetch weather telemetry FIRST so cards update immediately without waiting on nominatim
-      const weatherPromise = fetchWeatherTelemetry(lat, lon);
-      const geocodePromise = reverseGeocodeCoordinates(lat, lon);
-
-      const [weatherData, resolvedName] = await Promise.all([weatherPromise, geocodePromise]);
-      if (resolvedName) {
-        weatherData.resolved_city = resolvedName;
-      }
+      // 1. Fetch weather telemetry immediately
+      const weatherData = await fetchWeatherTelemetry(lat, lon);
       setWeather(weatherData);
+
+      // 2. Resolve micro-locality in background
+      reverseGeocodeCoordinates(lat, lon).then((cityName) => {
+        if (cityName) {
+          setWeather((prev) => (prev ? { ...prev, resolved_city: cityName } : prev));
+        }
+      });
     } catch (err) {
-      console.error("Telemetry sync failed, attempting direct load:", err);
-      try {
-        const fallbackData = await fetchWeatherTelemetry(lat, lon);
-        setWeather(fallbackData);
-      } catch (e) {
-        console.error("Critical fallback failed:", e);
-      }
+      console.error("Telemetry sync error:", err);
     } finally {
       setIsLocating(false);
     }
   };
 
-  // Dedicated Hardware GPS routine
+  // Hardware GPS Polling with automatic Desktop/WiFi fallback
   const acquireAccuratePosition = () => {
+    setIsLocating(true);
+
     if (!navigator.geolocation) {
-      console.warn("Geolocation hardware not accessible.");
-      // Initial default to Bengaluru if device has no GPS
       syncTelemetryLocation(12.9716, 77.5946);
       return;
     }
-    setIsLocating(true);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const deviceCoords = {
+        const accurate = {
           lat: parseFloat(pos.coords.latitude.toFixed(6)),
           lon: parseFloat(pos.coords.longitude.toFixed(6)),
         };
-        setCoords(deviceCoords);
-        syncTelemetryLocation(deviceCoords.lat, deviceCoords.lon);
+        setCoords(accurate);
+        syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("Device GPS failed or permission denied, using default station:", err);
+        console.warn("Device GPS unavailable, falling back to station coordinates:", err);
         const fallback = { lat: 12.9716, lon: 77.5946 };
         setCoords(fallback);
         syncTelemetryLocation(fallback.lat, fallback.lon);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
+        timeout: 6000, // Do not stall the UI longer than 6 seconds
+        maximumAge: 60000 // Accept recent fixes to avoid unnecessary stalls
       }
     );
   };
 
   useEffect(() => {
+    // Initial fetch on mount guarantees forecast data is immediately available
+    syncTelemetryLocation(12.9716, 77.5946);
     acquireAccuratePosition();
   }, []);
 
   const handleAuthorized = (retrievedCoords, userData) => {
-    setCoords(retrievedCoords);
+    const finalCoords = retrievedCoords || { lat: 12.9716, lon: 77.5946 };
+    setCoords(finalCoords);
     if (userData) {
       setUser(userData);
       localStorage.setItem('atmos_user', JSON.stringify(userData));
     }
     setStage('app');
-    syncTelemetryLocation(retrievedCoords.lat, retrievedCoords.lon);
+    syncTelemetryLocation(finalCoords.lat, finalCoords.lon);
   };
 
   const handleSendMessage = async (queryText) => {
     if (!queryText.trim() || !coords) return;
-    setMessages(prev => [...prev, { sender: 'user', text: queryText }]);
+    setMessages((prev) => [...prev, { sender: 'user', text: queryText }]);
     setIsLoading(true);
     try {
       const response = await sendAIChatQuery(queryText, coords.lat, coords.lon);
-      setMessages(prev => [...prev, { sender: 'ai', text: response.reply }]);
+      setMessages((prev) => [...prev, { sender: 'ai', text: response.reply }]);
     } catch {
-      setMessages(prev => [...prev, { sender: 'ai', text: "Weather telemetry offline. Check API connectivity." }]);
+      setMessages((prev) => [...prev, { sender: 'ai', text: "Weather telemetry offline. Check API connectivity." }]);
     } finally {
       setIsLoading(false);
     }
@@ -136,19 +132,18 @@ export default function App() {
     return dayNames[(todayIdx + offset) % 7];
   };
 
-  // Instant fallback metrics while real GPS data streams in
   const cur = weather?.current || {
     temp: 28,
     condition: "Partly Cloudy",
     precipitation: 0,
-    humidity: 52,
-    wind: 15,
+    humidity: 55,
+    wind: 14,
     dew_point: 17
   };
 
-  const city = weather?.resolved_city || (isLocating ? "Acquiring device GPS..." : "Bengaluru, Karnataka");
+  const city = weather?.resolved_city || (isLocating ? "Acquiring coordinates..." : "Bengaluru, Karnataka");
 
-  const hourly = (weather?.hourly && weather.hourly.length > 0)
+  const hourly = weather?.hourly?.length
     ? weather.hourly
     : [
         { time: "12 pm", temp: 28, precip: 0, wind: 14 },
@@ -161,13 +156,12 @@ export default function App() {
         { time: "9 am", temp: 25, precip: 5, wind: 11 }
       ];
 
-  // Guaranteed 7-Day weather data that never gets stuck on '--°'
-  const daily = (weather?.daily && weather.daily.length > 0)
+  const daily = weather?.daily?.length
     ? weather.daily
     : [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
         day: getDayName(offset),
-        max_temp: 29,
-        min_temp: 20,
+        max_temp: 29 + (offset % 2),
+        min_temp: 21,
         condition: "Partly Cloudy",
         chance_of_rain: 10
       }));
@@ -216,7 +210,7 @@ export default function App() {
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
                       <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                        Hardware GPS: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Detecting device..."}
+                        Hardware GPS: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Acquiring..."}
                       </p>
                     </div>
                     <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
@@ -273,7 +267,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Kinetic Atmospheric Trend Deck */}
+              {/* Diurnal Trend Vectors */}
               <div className="bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
                   <div>
@@ -346,7 +340,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 7-Day Synoptic Outlook */}
+              {/* 7-Day Synoptic Forecast Cards */}
               <div className="bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md">
                 <h3 className="text-base font-semibold text-white mb-4">7-Day Synoptic Forecast</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
