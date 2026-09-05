@@ -17,46 +17,47 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeMetric, setActiveMetric] = useState('temp');
+  const [isLocating, setIsLocating] = useState(false);
   const [messages, setMessages] = useState([
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
 
   // Synchronize precise location and hyper-local telemetry
   const syncTelemetryLocation = async (lat, lon) => {
-    // 1. Resolve exact micro-neighborhood (e.g., Vijayanagar, Bengaluru)
+    setIsLocating(true);
     const exactName = await reverseGeocodeCoordinates(lat, lon);
-    
-    // 2. Fetch weather payload carrying the exact neighborhood label
     try {
       const data = await fetchWeatherTelemetry(lat, lon, exactName);
       setWeather(data);
     } catch (err) {
       console.error("Telemetry sync failed:", err);
+    } finally {
+      setIsLocating(false);
     }
   };
 
+  const acquireAccuratePosition = () => {
+    if (!navigator.geolocation) return;
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const fresh = {
+          lat: parseFloat(pos.coords.latitude.toFixed(6)),
+          lon: parseFloat(pos.coords.longitude.toFixed(6))
+        };
+        setCoords(fresh);
+        syncTelemetryLocation(fresh.lat, fresh.lon);
+      },
+      () => {
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  };
+
   useEffect(() => {
-    if (navigator.geolocation && !coords) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const accurateCoords = {
-            lat: parseFloat(pos.coords.latitude.toFixed(6)),
-            lon: parseFloat(pos.coords.longitude.toFixed(6)),
-          };
-          setCoords(accurateCoords);
-          syncTelemetryLocation(accurateCoords.lat, accurateCoords.lon);
-        },
-        () => {
-          // Soft fallback coordinates if permission is denied or pending
-          setCoords({ lat: 12.9716, lon: 77.5946 });
-          syncTelemetryLocation(12.9716, 77.5946);
-        },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-      );
-    } else if (coords) {
-      syncTelemetryLocation(coords.lat, coords.lon);
-    }
-  }, [coords]);
+    acquireAccuratePosition();
+  }, []);
 
   const handleAuthorized = (retrievedCoords, userData) => {
     setCoords(retrievedCoords);
@@ -87,6 +88,15 @@ export default function App() {
     return <AuthModal onAuthorized={handleAuthorized} />;
   }
 
+  // Dynamic day-of-week calculation based on user's live system time
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const todayIdx = new Date().getDay();
+
+  const getDayName = (offset) => {
+    if (offset === 0) return "Today";
+    return dayNames[(todayIdx + offset) % 7];
+  };
+
   // Dynamic telemetry fallbacks
   const cur = weather?.current || { temp: 25, condition: "Partly Cloudy", precipitation: 18, humidity: 60, wind: 18 };
   const city = weather?.resolved_city || "Detecting micro-locality...";
@@ -101,15 +111,17 @@ export default function App() {
     { time: "9 pm", temp: 26, precip: 15, wind: 12 }
   ];
 
-  const daily = weather?.daily?.length ? weather.daily : [
-    { day: "Today", max_temp: 31, min_temp: 20, condition: "Partly Cloudy" },
-    { day: "Sat", max_temp: 32, min_temp: 21, condition: "Clear" },
-    { day: "Sun", max_temp: 32, min_temp: 22, condition: "Partly Cloudy" },
-    { day: "Mon", max_temp: 30, min_temp: 21, condition: "Rain" },
-    { day: "Tue", max_temp: 31, min_temp: 21, condition: "Partly Cloudy" },
-    { day: "Wed", max_temp: 30, min_temp: 20, condition: "Overcast" },
-    { day: "Thu", max_temp: 29, min_temp: 19, condition: "Rain" }
-  ];
+  const daily = (weather?.daily && weather.daily.length > 0)
+    ? weather.daily.map((item, idx) => ({
+        ...item,
+        day: idx === 0 ? "Today" : (item.day === "Today" ? getDayName(idx) : item.day)
+      }))
+    : [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
+        day: getDayName(offset),
+        max_temp: 31,
+        min_temp: 21,
+        condition: "Partly Cloudy"
+      }));
 
   const renderWeatherSymbol = (cond = "") => {
     const c = cond.toLowerCase();
@@ -139,7 +151,7 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
 
-              {/* Station Hero Banner */}
+              {/* Station Hero Banner with Precision Calibration */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-[#101524]/90 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-md relative overflow-hidden flex flex-col justify-between">
                   <div className="flex justify-between items-start">
@@ -147,9 +159,17 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                         <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold">Live Telemetry Feed</span>
+                        <button
+                          onClick={acquireAccuratePosition}
+                          className="ml-2 text-[10px] text-amber-400 hover:text-amber-300 font-mono border border-amber-500/30 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
+                        >
+                          {isLocating ? "Calibrating..." : "Calibrate GPS"}
+                        </button>
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
-                      <p className="text-xs text-slate-400 mt-0.5">Atmospheric station telemetry • Real-time update</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Resolving telemetry coordinates..."}
+                      </p>
                     </div>
                     <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
                   </div>
@@ -274,7 +294,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Timeline axis */}
+                {/* Timeline Axis */}
                 <div className="flex justify-between text-xs text-slate-400 font-mono px-2 pt-1 border-t border-slate-800/60">
                   {hourly.map((h, i) => (
                     <span key={i}>{h.time}</span>
