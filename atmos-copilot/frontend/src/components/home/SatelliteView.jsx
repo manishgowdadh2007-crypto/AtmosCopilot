@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CloudRain, Satellite, Wind, Radio } from "lucide-react";
+import { CloudRain, Satellite, Wind } from "lucide-react";
 
 export default function SatelliteView({ coords, weather }) {
   const [activeLayer, setActiveLayer] = useState("radar"); // "radar" | "satellite" | "wind"
@@ -25,28 +25,26 @@ export default function SatelliteView({ coords, weather }) {
     return () => clearInterval(timer);
   }, []);
 
+  const getStreamUrl = () => {
+    if (activeLayer === "radar") {
+      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&oFa=0&oc=1&layer=radar&sm=1&sn=1`;
+    }
+    if (activeLayer === "satellite") {
+      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},7&oFa=0&oc=1&layer=satellite&sm=1&sn=1`;
+    }
+    return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=7&overlay=wind&level=surface&lat=${lat}&lon=${lon}`;
+  };
+
   return (
     <div className="relative w-full h-full bg-[#05070e] overflow-hidden select-none font-sans flex flex-col">
-      {/* Live Interactive Doppler Radar Surface */}
-      {activeLayer === "radar" ? (
-        <iframe
-          key="rainviewer-radar"
-          title="Live Doppler Weather Radar"
-          src={`https://www.rainviewer.com/map.html?loc=${lat},${lon},9&oFa=0&oc=1&layer=radar&sm=1&sn=1`}
-          className="w-full h-full border-0 filter contrast-110 saturate-125"
-          allow="geolocation"
-        />
-      ) : (
-        <iframe
-          key={activeLayer}
-          title="Atmospheric Satellite & Vector Stream"
-          src={`https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%25&height=100%25&zoom=8&level=surface&overlay=${
-            activeLayer === "satellite" ? "satellite" : "wind"
-          }&product=${activeLayer === "satellite" ? "satellite" : "ecmwf"}&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`}
-          className="w-full h-full border-0 filter contrast-105 saturate-110"
-          allow="geolocation"
-        />
-      )}
+      {/* Live Map Stream Frame */}
+      <iframe
+        key={activeLayer}
+        title="Atmospheric Telemetry Radar"
+        src={getStreamUrl()}
+        className="w-full h-full border-0 filter contrast-110 saturate-125"
+        loading="lazy"
+      />
 
       {/* Layer Switcher HUD */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#0c101c]/90 backdrop-blur-xl border border-slate-700/60 p-2.5 sm:p-3 rounded-2xl shadow-2xl">
@@ -83,7 +81,7 @@ export default function SatelliteView({ coords, weather }) {
           >
             <div className="flex items-center gap-2">
               <Satellite className="w-3.5 h-3.5" />
-              <span>INSAT / Cloud Satellite</span>
+              <span>INSAT / Cloud Infrared</span>
             </div>
             <span className="text-[10px] font-mono opacity-80 ml-2">IR</span>
           </button>
@@ -106,7 +104,7 @@ export default function SatelliteView({ coords, weather }) {
       </div>
 
       {/* Ephemeris & Live Station Status Bar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-xl border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200">
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#0c101c]/90 backdrop-blur-xl border border-slate-700/60 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200 whitespace-nowrap">
         <span className="font-mono text-amber-300 font-semibold">{currentTimeStr}</span>
         <div className="h-4 w-px bg-slate-700" />
         <span className="font-mono text-[11px] text-slate-400">
