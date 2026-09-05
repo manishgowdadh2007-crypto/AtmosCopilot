@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import { CloudRain, Satellite, Wind, RefreshCw } from "lucide-react";
 
 export default function SatelliteView({ coords, weather }) {
-  const [activeLayer, setActiveLayer] = useState("radar"); // "radar" | "satellite" | "wind"
+  const [activeLayer, setActiveLayer] = useState("radar");
   const [currentTimeStr, setCurrentTimeStr] = useState("");
-  const [keyCounter, setKeyCounter] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const lat = coords?.lat || 12.9716;
   const lon = coords?.lon || 77.5946;
@@ -27,29 +27,35 @@ export default function SatelliteView({ coords, weather }) {
   }, []);
 
   const getStreamUrl = () => {
-    if (activeLayer === "radar") {
-      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&oFa=0&oc=1&layer=radar&sm=1&sn=1`;
-    }
     if (activeLayer === "satellite") {
-      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},7&oFa=0&oc=1&layer=satellite&sm=1&sn=1`;
+      // Zoom Earth Real-Time Cloud & Infrared Satellite Stream
+      return `https://zoom.earth/maps/satellite/#view=${lat},${lon},7z`;
     }
-    // Cross-origin safe OpenStreetMap Wind / Surface stream
-    return `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%25&height=100%25&zoom=7&level=surface&overlay=wind&product=ecmwf&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`;
+    if (activeLayer === "wind") {
+      // Open-Meteo & ECMWF Surface Wind Vectors
+      return `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%25&height=100%25&zoom=7&level=surface&overlay=wind&product=ecmwf&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`;
+    }
+    // High-Resolution Live Doppler Weather Radar
+    return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&oFa=0&oc=1&layer=radar&sm=1&sn=1`;
   };
 
   return (
-    <div className="absolute inset-0 w-full h-full bg-[#05070e] overflow-hidden select-none font-sans z-10">
-      {/* 1. Hardware-Pushed Full Viewport Iframe */}
+    <div 
+      className="relative w-full bg-[#05070e] overflow-hidden select-none font-sans"
+      style={{ height: "calc(100vh - 64px)", minHeight: "calc(100vh - 64px)" }}
+    >
+      {/* 1. Full Viewport Interactive Radar Stream */}
       <iframe
-        key={`${activeLayer}-${keyCounter}`}
+        key={`${activeLayer}-${reloadKey}`}
         title="Atmospheric Telemetry Radar"
         src={getStreamUrl()}
-        className="absolute inset-0 w-full h-full border-0 filter contrast-110 saturate-125"
-        style={{ width: "100%", height: "100%", border: "none" }}
+        className="w-full h-full border-0 filter contrast-105 saturate-110"
+        style={{ width: "100%", height: "100%", display: "block" }}
+        allow="geolocation; autoplay; fullscreen"
         loading="eager"
       />
 
-      {/* 2. Layer Selector Pill HUD */}
+      {/* 2. Top-Left Observation HUD */}
       <div className="absolute top-4 left-4 z-30 flex flex-col gap-2 bg-[#0c101c]/95 backdrop-blur-xl border border-slate-700/80 p-3 rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
           <div className="flex items-center gap-2">
@@ -59,7 +65,7 @@ export default function SatelliteView({ coords, weather }) {
             </span>
           </div>
           <button
-            onClick={() => setKeyCounter((prev) => prev + 1)}
+            onClick={() => setReloadKey((prev) => prev + 1)}
             title="Reload Frame"
             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
           >
@@ -115,7 +121,7 @@ export default function SatelliteView({ coords, weather }) {
         </div>
       </div>
 
-      {/* 3. Station Ephemeris Footer */}
+      {/* 3. Station Ephemeris Footer Bar */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-[#0c101c]/95 backdrop-blur-xl border border-slate-700/80 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200 whitespace-nowrap">
         <span className="font-mono text-amber-300 font-semibold">{currentTimeStr}</span>
         <div className="h-4 w-px bg-slate-700" />
@@ -124,7 +130,7 @@ export default function SatelliteView({ coords, weather }) {
         </span>
         <div className="h-4 w-px bg-slate-700 hidden sm:block" />
         <span className="font-mono text-[11px] text-emerald-400 hidden sm:inline">
-          Telemetry Station: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "12.9716°N, 77.5946°E"}
+          Station: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Bengaluru"}
         </span>
       </div>
     </div>
