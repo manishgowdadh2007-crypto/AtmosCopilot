@@ -215,3 +215,27 @@ async def copilot_intelligence(req: QueryRequest):
         reply = f"Current atmospheric conditions in {city_label}: {cond} at {temp}°C with wind speed around {wind} km/h."
 
     return {"reply": reply, "telemetry": telemetry}
+# In main.py, add this model and endpoint:
+
+class UserRegisterRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+# In-memory session store (or connect to your database)
+user_db = []
+
+@app.post("/api/register")
+async def register_user_session(user: UserRegisterRequest):
+    record = {
+        "name": user.name.strip(),
+        "email": user.email.strip().lower(),
+        "phone": user.phone.strip(),
+        "latitude": user.latitude,
+        "longitude": user.longitude,
+        "timestamp": datetime.now().isoformat()
+    }
+    user_db.append(record)
+    return {"status": "success", "message": "User telemetry profile registered", "user": record}
