@@ -34,8 +34,8 @@ export default function App() {
 
   const syncTelemetryLocation = async (lat, lon) => {
     setIsLocating(true);
-    const resolvedName = await reverseGeocodeCoordinates(lat, lon);
     try {
+      const resolvedName = await reverseGeocodeCoordinates(lat, lon);
       const data = await fetchWeatherTelemetry(lat, lon, resolvedName);
       setWeather(data);
     } catch (err) {
@@ -177,7 +177,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                         <span className="text-xs uppercase tracking-widest text-amber-400 font-semibold">
-                          IMD Bengaluru RMC Feed
+                          Live Telemetry Feed
                         </span>
                         <button
                           onClick={acquireAccuratePosition}
@@ -188,7 +188,7 @@ export default function App() {
                       </div>
                       <h2 className="text-2xl sm:text-3xl font-bold mt-1 text-white tracking-tight">{city}</h2>
                       <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                        Source: India Meteorological Department • {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Observatory Link"}
+                        Hardware GPS: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Acquiring..."}
                       </p>
                     </div>
                     <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
