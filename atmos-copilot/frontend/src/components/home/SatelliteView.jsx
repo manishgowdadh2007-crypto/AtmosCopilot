@@ -27,16 +27,16 @@ export default function SatelliteView({ coords, weather }) {
   }, []);
 
   const getStreamUrl = () => {
+    // 1. Live Doppler Precipitation Radar (RainViewer)
+    if (activeLayer === "radar") {
+      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&oFa=0&oc=1&layer=radar&sm=1&sn=1`;
+    }
+    // 2. Global Infrared Cloud Coverage (RainViewer Satellite - Frame-safe)
     if (activeLayer === "satellite") {
-      // Zoom Earth Real-Time Cloud & Infrared Satellite Stream
-      return `https://zoom.earth/maps/satellite/#view=${lat},${lon},7z`;
+      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},7&oFa=0&oc=1&layer=satellite&sm=1&sn=1`;
     }
-    if (activeLayer === "wind") {
-      // Open-Meteo & ECMWF Surface Wind Vectors
-      return `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%25&height=100%25&zoom=7&level=surface&overlay=wind&product=ecmwf&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`;
-    }
-    // High-Resolution Live Doppler Weather Radar
-    return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&oFa=0&oc=1&layer=radar&sm=1&sn=1`;
+    // 3. OpenStreetMap Wind Vector Surface Layer (Frame-safe)
+    return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=7&overlay=wind&product=ecmwf&level=surface&lat=${lat}&lon=${lon}`;
   };
 
   return (
@@ -44,18 +44,18 @@ export default function SatelliteView({ coords, weather }) {
       className="relative w-full bg-[#05070e] overflow-hidden select-none font-sans"
       style={{ height: "calc(100vh - 64px)", minHeight: "calc(100vh - 64px)" }}
     >
-      {/* 1. Full Viewport Interactive Radar Stream */}
+      {/* Interactive Telemetry Stream */}
       <iframe
         key={`${activeLayer}-${reloadKey}`}
-        title="Atmospheric Telemetry Radar"
+        title="Atmospheric Telemetry Surface"
         src={getStreamUrl()}
-        className="w-full h-full border-0 filter contrast-105 saturate-110"
+        className="w-full h-full border-0 filter contrast-105 saturate-115"
         style={{ width: "100%", height: "100%", display: "block" }}
-        allow="geolocation; autoplay; fullscreen"
+        allow="geolocation; fullscreen"
         loading="eager"
       />
 
-      {/* 2. Top-Left Observation HUD */}
+      {/* Observation Surface Selector HUD */}
       <div className="absolute top-4 left-4 z-30 flex flex-col gap-2 bg-[#0c101c]/95 backdrop-blur-xl border border-slate-700/80 p-3 rounded-2xl shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
           <div className="flex items-center gap-2">
@@ -121,7 +121,7 @@ export default function SatelliteView({ coords, weather }) {
         </div>
       </div>
 
-      {/* 3. Station Ephemeris Footer Bar */}
+      {/* Station Ephemeris Footer Bar */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-[#0c101c]/95 backdrop-blur-xl border border-slate-700/80 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200 whitespace-nowrap">
         <span className="font-mono text-amber-300 font-semibold">{currentTimeStr}</span>
         <div className="h-4 w-px bg-slate-700" />
