@@ -5,12 +5,17 @@ import {
 } from 'lucide-react';
 import SatelliteView from './components/home/SatelliteView';
 import EnvironmentalPanel from './components/home/EnvironmentalPanel';
+import AgriAdvisoryView from './components/home/AgriAdvisoryView';
+import RoutePlannerView from './components/home/RoutePlannerView';
+import DisasterView from './components/home/DisasterView';
+import ClimateIntelView from './components/home/ClimateIntelView';
 import Header from './components/common/Header';
 import SplashScreen from './components/onboarding/SplashScreen';
 import AuthModal from './components/onboarding/AuthModal';
 import SunAvatar from './components/copilot/SunAvatar';
 import ChatStream from './components/copilot/ChatStream';
 import ChatInput from './components/copilot/ChatInput';
+import { translations } from './utils/translations';
 import { 
   fetchWeatherTelemetry, 
   reverseGeocodeCoordinates, 
@@ -34,6 +39,7 @@ export default function App() {
   const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
   const [weather, setWeather] = useState(null);
   const [envData, setEnvData] = useState(null);
+  const [lang, setLang] = useState(() => localStorage.getItem('atmos_lang') || 'en');
 
   const [searchHistory, setSearchHistory] = useState(() => {
     try {
@@ -51,6 +57,11 @@ export default function App() {
   const [messages, setMessages] = useState([
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
+
+  const handleLanguageChange = (newLang) => {
+    setLang(newLang);
+    localStorage.setItem('atmos_lang', newLang);
+  };
 
   const syncTelemetryLocation = async (lat, lon) => {
     setIsLocating(true);
@@ -91,7 +102,7 @@ export default function App() {
         syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("GPS lock error, defaulting to Bengaluru:", err);
+        console.warn("GPS lock error, defaulting to station baseline:", err);
         const fallback = { lat: 12.9716, lon: 77.5946 };
         setCoords(fallback);
         syncTelemetryLocation(fallback.lat, fallback.lon);
@@ -232,6 +243,7 @@ export default function App() {
           currentPage={currentPage} 
           setCurrentPage={setCurrentPage} 
           onLogout={handleLogout}
+          lang={lang}
         />
       </div>
 
@@ -451,6 +463,18 @@ export default function App() {
           </div>
         )}
 
+        {/* AGRI ADVISORY */}
+        {currentPage === 'agri' && <AgriAdvisoryView coords={coords} weather={weather} />}
+
+        {/* WEATHER-SAFE ROUTE PLANNER */}
+        {currentPage === 'routes' && <RoutePlannerView coords={coords} weather={weather} />}
+
+        {/* DISASTER EARLY WARNING */}
+        {currentPage === 'disaster' && <DisasterView coords={coords} weather={weather} />}
+
+        {/* CLIMATE INTEL */}
+        {currentPage === 'climate' && <ClimateIntelView coords={coords} weather={weather} />}
+
         {/* ALERTS */}
         {currentPage === 'alerts' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
@@ -595,13 +619,30 @@ export default function App() {
                     </div>
                     <div>
                       <h2 className="text-lg sm:text-xl font-bold text-white">System Settings & Operator Profile</h2>
-                      <p className="text-xs text-slate-400">Manage device telemetry and authorization status</p>
+                      <p className="text-xs text-slate-400">Manage device telemetry, locale, and authorization status</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
                     <ShieldCheck className="w-4 h-4" />
                     <span>AUTHENTICATED</span>
                   </div>
+                </div>
+
+                {/* System Language Selector */}
+                <div className="p-4 rounded-2xl bg-[#080d1a] border border-slate-800 space-y-2">
+                  <span className="text-xs font-semibold text-white block">System Language / ಭಾಷೆ / भाषा</span>
+                  <select
+                    value={lang}
+                    onChange={(e) => handleLanguageChange(e.target.value)}
+                    className="w-full bg-[#0d1322] border border-slate-700 text-xs text-white p-2.5 rounded-xl outline-none focus:border-amber-400"
+                  >
+                    <option value="en">English (Global)</option>
+                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    <option value="hi">हिन्दी (Hindi)</option>
+                    <option value="ta">தமிழ் (Tamil)</option>
+                    <option value="te">తెలుగు (Telugu)</option>
+                    <option value="es">Español (Spanish)</option>
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
