@@ -228,11 +228,11 @@ export default function App() {
         muted
         playsInline
         onError={(e) => (e.currentTarget.style.display = 'none')}
-        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-35 filter brightness-90 contrast-105"
+        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-60 filter brightness-110 contrast-110"
       >
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
-      <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/90 via-[#05070e]/75 to-[#05070e]/95 pointer-events-none z-0" />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/70 via-[#05070e]/40 to-[#05070e]/80 pointer-events-none z-0" />
 
       {/* Header Bar */}
       <div className="flex-shrink-0 z-50">
