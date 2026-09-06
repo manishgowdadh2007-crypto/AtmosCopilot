@@ -230,7 +230,7 @@ export default function App() {
         onError={(e) => (e.currentTarget.style.display = 'none')}
         className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-35 filter brightness-90 contrast-105"
       >
-        <source src="/earth-background.mp4" type="video/mp4" />
+        <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
       <div className="absolute inset-0 bg-gradient-to-b from-[#05070e]/90 via-[#05070e]/75 to-[#05070e]/95 pointer-events-none z-0" />
 
