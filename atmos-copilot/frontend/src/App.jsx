@@ -4,13 +4,19 @@ import {
   Settings, LogOut, User, Mail, Phone, Clock, ShieldCheck, CheckCircle2 
 } from 'lucide-react';
 import SatelliteView from './components/home/SatelliteView';
+import EnvironmentalPanel from './components/home/EnvironmentalPanel';
 import Header from './components/common/Header';
 import SplashScreen from './components/onboarding/SplashScreen';
 import AuthModal from './components/onboarding/AuthModal';
 import SunAvatar from './components/copilot/SunAvatar';
 import ChatStream from './components/copilot/ChatStream';
 import ChatInput from './components/copilot/ChatInput';
-import { fetchWeatherTelemetry, reverseGeocodeCoordinates, sendAIChatQuery } from './services/api';
+import { 
+  fetchWeatherTelemetry, 
+  reverseGeocodeCoordinates, 
+  sendAIChatQuery, 
+  fetchEnvironmentalTelemetry 
+} from './services/api';
 
 export default function App() {
   const savedUser = (() => {
@@ -27,6 +33,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
   const [weather, setWeather] = useState(null);
+  const [envData, setEnvData] = useState(null);
 
   const [searchHistory, setSearchHistory] = useState(() => {
     try {
@@ -48,8 +55,12 @@ export default function App() {
   const syncTelemetryLocation = async (lat, lon) => {
     setIsLocating(true);
     try {
-      const weatherData = await fetchWeatherTelemetry(lat, lon);
+      const [weatherData, environmentalData] = await Promise.all([
+        fetchWeatherTelemetry(lat, lon),
+        fetchEnvironmentalTelemetry(lat, lon)
+      ]);
       setWeather(weatherData);
+      setEnvData(environmentalData);
 
       reverseGeocodeCoordinates(lat, lon).then((cityName) => {
         if (cityName) {
@@ -233,6 +244,7 @@ export default function App() {
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
+              {/* Station Banner */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden flex flex-col justify-between">
                   <div className="flex justify-between items-start">
@@ -308,6 +320,10 @@ export default function App() {
                 </div>
               </div>
 
+              {/* ENVIRONMENTAL & MICRO-CLIMATE INDICES */}
+              <EnvironmentalPanel envData={envData} />
+
+              {/* Diurnal Trend Projection */}
               <div className="bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
                   <div>
