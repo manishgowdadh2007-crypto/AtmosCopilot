@@ -1,8 +1,25 @@
 import React, { useState } from 'react';
-import { Sun, MapPin, Satellite, Bell, History, Settings, Menu, X, ShieldCheck, LogOut } from 'lucide-react';
+import { 
+  Sun, 
+  MapPin, 
+  Satellite, 
+  Compass, 
+  AlertTriangle, 
+  Sprout, 
+  Navigation, 
+  AlertOctagon, 
+  History, 
+  Settings, 
+  Menu, 
+  X, 
+  ShieldCheck, 
+  LogOut 
+} from 'lucide-react';
+import { translations } from '../../utils/translations';
 
-export default function Header({ weather, coords, user, currentPage, setCurrentPage, onLogout }) {
+export default function Header({ weather, coords, user, currentPage, setCurrentPage, onLogout, lang = 'en' }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const t = translations[lang] || translations.en;
 
   const locationLabel =
     weather?.resolved_city ||
@@ -14,19 +31,23 @@ export default function Header({ weather, coords, user, currentPage, setCurrentP
   };
 
   const navItems = [
-    { id: 'home', label: 'Observatory', icon: null },
-    { id: 'satellite', label: 'Satellite', icon: Satellite },
-    { id: 'copilot', label: 'Sun Copilot', icon: Sun },
-    { id: 'alerts', label: 'Alerts', icon: Bell },
-    { id: 'history', label: 'History', icon: History },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'home', label: t.observatory, icon: Compass },
+    { id: 'satellite', label: t.satellite, icon: Satellite },
+    { id: 'copilot', label: t.sunCopilot, icon: Sun },
+    { id: 'agri', label: t.agri, icon: Sprout },
+    { id: 'routes', label: t.routePlanner, icon: Navigation },
+    { id: 'disaster', label: t.disaster, icon: AlertOctagon },
+    { id: 'climate', label: t.climate, icon: History },
+    { id: 'alerts', label: t.alerts, icon: AlertTriangle },
+    { id: 'history', label: t.history, icon: History },
+    { id: 'settings', label: t.settings, icon: Settings },
   ];
 
   return (
     <>
       <header className="h-16 border-b border-slate-800/80 bg-[#070a13]/90 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between z-40 text-white select-none relative">
         {/* Brand & Micro-Locality */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0 flex-shrink-0">
           <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/30 flex items-center justify-center flex-shrink-0">
             <Sun className="w-4 h-4 text-amber-400" />
           </div>
@@ -37,15 +58,15 @@ export default function Header({ weather, coords, user, currentPage, setCurrentP
             </span>
             <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1 min-w-0">
               <MapPin className="w-3 h-3 text-blue-400 flex-shrink-0" />
-              <span className="truncate max-w-[150px] sm:max-w-[240px] text-slate-300 font-medium">
+              <span className="truncate max-w-[120px] sm:max-w-[200px] text-slate-300 font-medium">
                 {locationLabel}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Desktop View: All 6 Navigation Sections Visible */}
-        <nav className="hidden md:flex items-center gap-1 bg-[#0d1322]/80 p-1 rounded-2xl border border-slate-700/60 shadow-inner">
+        {/* Desktop View: Horizontal Scrollable Suite for all 10 Navigation Modules */}
+        <nav className="hidden md:flex items-center gap-1.5 bg-[#0d1322]/80 p-1.5 rounded-2xl border border-slate-700/60 shadow-inner overflow-x-auto max-w-[70vw] scrollbar-none">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
@@ -53,23 +74,13 @@ export default function Header({ weather, coords, user, currentPage, setCurrentP
               <button
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition flex-shrink-0 ${
                   isActive
-                    ? item.id === 'satellite'
-                      ? 'bg-blue-600 text-white font-bold shadow-md'
-                      : item.id === 'copilot'
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md'
-                      : item.id === 'alerts'
-                      ? 'bg-rose-500 text-white font-bold shadow-md'
-                      : item.id === 'history'
-                      ? 'bg-purple-600 text-white font-bold shadow-md'
-                      : item.id === 'settings'
-                      ? 'bg-slate-700 text-white font-bold shadow-md'
-                      : 'bg-slate-800 text-white shadow-md font-semibold border border-slate-700/50'
-                    : 'text-slate-400 hover:text-white'
+                    ? "bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20"
+                    : "text-slate-400 hover:text-white hover:bg-slate-800/60"
                 }`}
               >
-                {Icon && <Icon className="w-3.5 h-3.5" />}
+                <Icon className="w-3.5 h-3.5" />
                 <span>{item.label}</span>
                 {item.id === 'alerts' && weather?.current?.precipitation > 0 && (
                   <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
@@ -79,7 +90,7 @@ export default function Header({ weather, coords, user, currentPage, setCurrentP
           })}
         </nav>
 
-        {/* Mobile View: Hamburger Button (Visible only on mobile screens < 768px) */}
+        {/* Mobile View: Hamburger Button */}
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="Toggle navigation drawer"
@@ -105,20 +116,12 @@ export default function Header({ weather, coords, user, currentPage, setCurrentP
                   onClick={() => handleNav(item.id)}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium border transition ${
                     isActive
-                      ? item.id === 'alerts'
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-lg'
-                        : item.id === 'copilot'
-                        ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-lg'
-                        : item.id === 'history'
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-lg'
-                        : item.id === 'settings'
-                        ? 'bg-slate-700 text-white border-slate-600 shadow-lg'
-                        : 'bg-slate-800 text-white border-slate-700 shadow-md'
-                      : 'bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800/40'
+                      ? "bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-lg"
+                      : "bg-slate-900/60 text-slate-300 border-slate-800 hover:bg-slate-800/40"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    {Icon && <Icon className="w-4 h-4" />}
+                    <Icon className="w-4 h-4" />
                     <span>{item.label}</span>
                   </div>
                   <span className="text-xs opacity-60 font-mono">View</span>
@@ -133,16 +136,18 @@ export default function Header({ weather, coords, user, currentPage, setCurrentP
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span className="truncate max-w-[180px]">{user?.name || "Operator Terminal"}</span>
             </div>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onLogout();
-              }}
-              className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 font-medium"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
+            {onLogout && (
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onLogout();
+                }}
+                className="flex items-center gap-1 text-xs text-rose-400 hover:text-rose-300 font-medium"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            )}
           </div>
         </div>
       )}
