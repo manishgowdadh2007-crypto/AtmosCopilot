@@ -327,46 +327,46 @@ export default function App() {
 
   const { path: dynamicStroke, area: dynamicArea, coords: activeGraphPoints, values: activeGraphValues } = calculateRealCurve(activeHourlyData, activeMetric);
 
-  // Soft atmospheric card styles
+  // Cards have soft glassmorphism so the globe video shows behind them cleanly
   const cardBg = theme === 'dark' 
-    ? 'bg-[#0d1322]/85 border-slate-700/60 text-slate-100 shadow-2xl' 
-    : 'bg-white/85 border-[#cbd5e1] text-slate-900 shadow-xl shadow-slate-300/60 backdrop-blur-md';
+    ? 'bg-[#0d1322]/80 border-slate-700/60 text-slate-100 shadow-2xl backdrop-blur-md' 
+    : 'bg-white/75 border-slate-300/80 text-slate-900 shadow-xl shadow-slate-900/10 backdrop-blur-md';
 
   const subCardBg = theme === 'dark'
-    ? 'bg-[#080d1a] border-slate-800/80 text-slate-300'
-    : 'bg-[#f1f5f9] border-[#cbd5e1] text-slate-800';
+    ? 'bg-[#080d1a]/80 border-slate-800/80 text-slate-300'
+    : 'bg-slate-100/80 border-slate-300/60 text-slate-800';
 
   const headingText = theme === 'dark' ? 'text-white' : 'text-slate-900';
   const subText = theme === 'dark' ? 'text-slate-400' : 'text-slate-600';
 
   return (
-    <div className={`min-h-screen w-full transition-colors duration-300 font-sans ${
-      theme === 'dark'
-        ? 'bg-[#050811] text-slate-100'
-        : 'bg-gradient-to-br from-[#dfe7f2] via-[#eaf0f8] to-[#d5e0ee] text-slate-800'
-    }`}>
-      {/* Background Video Layer */}
+    <div className="fixed inset-0 flex flex-col overflow-hidden font-sans select-none">
+      
+      {/* 1. GLOBAL CONSTANT BACKGROUND VIDEO LAYER */}
       <video
         autoPlay
         loop
         muted
         playsInline
         onError={(e) => (e.currentTarget.style.display = 'none')}
-        className={`fixed inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-500 ${
-          theme === 'dark' ? 'opacity-60 filter brightness-110 contrast-110' : 'opacity-15 filter brightness-110'
+        className={`fixed inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-700 ${
+          theme === 'dark' 
+            ? 'opacity-70 filter brightness-105 contrast-110' 
+            : 'opacity-55 filter brightness-110 saturate-120'
         }`}
       >
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
 
-      <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-300 ${
+      {/* 2. ATMOSPHERIC GLASS TINT (Preserves Globe Clarity across Themes) */}
+      <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
         theme === 'dark'
-          ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/40 to-[#050811]/80'
-          : 'bg-gradient-to-b from-[#dfe7f2]/60 via-[#eaf0f8]/50 to-[#d5e0ee]/70'
+          ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/35 to-[#050811]/80'
+          : 'bg-gradient-to-b from-[#b8c7d9]/50 via-[#cdd8e6]/30 to-[#a8bbce]/60'
       }`} />
 
-      {/* Header Bar */}
-      <div className="relative z-50">
+      {/* 3. HEADER BAR (Transparent Glass) */}
+      <div className="relative z-50 flex-shrink-0">
         <Header 
           weather={weather}
           coords={coords}
@@ -380,10 +380,10 @@ export default function App() {
         />
       </div>
 
-      {/* Main Screen Container */}
-      <main className="relative z-10 flex flex-col min-h-0 overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
+      {/* 4. MAIN VIEWPORT ROUTER (Always Transparent) */}
+      <main className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
         {currentPage === 'home' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-7xl mx-auto space-y-6">
               
               {/* Station Banner */}
@@ -595,13 +595,13 @@ export default function App() {
         )}
 
         {currentPage === 'satellite' && (
-          <div className="w-full h-full flex-1 overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
+          <div className="w-full h-full flex-1 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
             <SatelliteView coords={coords} weather={weather} theme={theme} />
           </div>
         )}
 
         {currentPage === 'copilot' && (
-          <div className="w-full max-w-3xl mx-auto flex flex-col justify-between h-full overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
+          <div className="w-full max-w-3xl mx-auto flex flex-col justify-between h-full overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
             <div className="flex flex-col items-center justify-center pt-3 pb-1 flex-shrink-0">
               <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-16 sm:h-16" />
               <h2 className="text-base sm:text-lg font-bold mt-1 text-amber-500">{t.sunCopilot}</h2>
@@ -624,7 +624,7 @@ export default function App() {
         {currentPage === 'climate' && <ClimateIntelView coords={coords} weather={weather} theme={theme} />}
 
         {currentPage === 'alerts' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-4xl mx-auto">
               <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
                 <div className={`flex items-center justify-between border-b pb-4 mb-5 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -648,7 +648,7 @@ export default function App() {
         )}
 
         {currentPage === 'history' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-4xl mx-auto">
               <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
                 <div className={`flex items-center justify-between border-b pb-4 mb-5 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -685,7 +685,7 @@ export default function App() {
         )}
 
         {currentPage === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-3xl mx-auto space-y-6">
               <div className={`border rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6 ${cardBg}`}>
                 <div className={`flex items-center justify-between border-b pb-5 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
