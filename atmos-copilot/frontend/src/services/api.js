@@ -317,8 +317,10 @@ export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   }
 };
 
-// 6. Gemini Grounded Telemetry Query
+// 6. Dynamic Grounded Telemetry Query (Arbitrary Area Geocoding + Live Fallback)
 export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
+  const BASE_URL = import.meta.env.VITE_BACKEND_URL || "https://atmoscopilot-backend.onrender.com/api";
+
   try {
     const res = await fetch(`${BASE_URL}/ai-query`, {
       method: "POST",
@@ -329,29 +331,40 @@ export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
       return await res.json();
     }
   } catch (err) {
-    console.warn("AI query endpoint fallback to client telemetry core:", err);
+    console.warn("Backend connection issue, querying live Open-Meteo fallback:", err);
   }
 
-  const q = query.toLowerCase();
-  const place = localWeather?.resolved_city || "your location";
-  const temp = localWeather?.current?.temp ?? 28;
-  const precip = localWeather?.current?.precipitation ?? 0;
-  const hum = localWeather?.current?.humidity ?? 50;
-  const wind = localWeather?.current?.wind ?? 9;
-  const cond = localWeather?.current?.condition ?? "Clear";
+  // Pure dynamic fallback: geocode typed place on the client side if backend is sleeping
+  try {
+    const cleanSearch = query.replace(/weather|what|is|the|in|for|at|around|how|like|today|now/gi, "").trim();
+    const targetSearch = cleanSearch.length >= 2 ? cleanSearch : (localWeather?.resolved_city || "Bengaluru");
 
-  let reply = "";
-  if (q.includes("rain") || q.includes("umbrella") || q.includes("shower")) {
-    reply = precip > 20
-      ? `Precipitation probability in ${place} is elevated at ${precip}%. Carry rain protection.`
-      : `Precipitation probability in ${place} is ${precip}%. Conditions are dry.`;
-  } else if (q.includes("temp") || q.includes("hot") || q.includes("cold") || q.includes("warm")) {
-    reply = `Surface temperature in ${place} is currently ${temp}°C with ${hum}% relative humidity.`;
-  } else if (q.includes("wind") || q.includes("breeze") || q.includes("gust")) {
-    reply = `Wind speed around ${place} is steady at ${wind} km/h.`;
-  } else {
-    reply = `Live observation for ${place}: ${cond} at ${temp}°C, humidity ${hum}%, wind ${wind} km/h.`;
+    const geoRes = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(targetSearch)}&format=json&limit=1`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const geoData = await geoRes.json();
+    if (geoData && geoData.length > 0) {
+      const qLat = parseFloat(geoData[0].lat);
+      const qLon = parseFloat(geoData[0].lon);
+      const qName = geoData[0].display_name.split(",")[0];
+
+      const meteoRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${qLat}&longitude=${qLon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`
+      );
+      const meteoData = await meteoRes.json();
+      const cur = meteoData.current || {};
+      const condition = mapWmoCode(cur.weather_code ?? 0);
+
+      return {
+        reply: `Current live weather in ${qName}: ${condition} at ${Math.round(cur.temperature_2m ?? 0)}°C with ${Math.round(cur.relative_humidity_2m ?? 0)}% humidity and winds at ${Math.round(cur.wind_speed_10m ?? 0)} km/h.`
+      };
+    }
+  } catch (clientErr) {
+    console.warn("Client dynamic fallback failed:", clientErr);
   }
 
-  return { reply, status: "client_grounded_telemetry" };
+  return {
+    reply: "Unable to retrieve live telemetry for that specific area. Please verify your connection or location name."
+  };
 };
