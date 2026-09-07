@@ -45,6 +45,26 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('atmos_theme') || 'dark');
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
 
+  // Live second/minute time counter
+  const [currentTime, setCurrentTime] = useState('');
+
+  useEffect(() => {
+    const updateLiveClock = () => {
+      const now = new Date();
+      setCurrentTime(
+        now.toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        })
+      );
+    };
+    updateLiveClock();
+    const interval = setInterval(updateLiveClock, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [searchHistory, setSearchHistory] = useState(() => {
     try {
       const saved = localStorage.getItem('atmos_search_history');
@@ -189,7 +209,7 @@ export default function App() {
 
   const clearHistory = () => {
     setSearchHistory([]);
-    localStorage.removeItem('atmos_search_history');
+    localStorage.setItem('atmos_search_history');
   };
 
   if (stage === 'splash') {
@@ -211,7 +231,6 @@ export default function App() {
 
   const city = weather?.resolved_city || (isLocating ? t.acquiring : "Bengaluru, Karnataka");
 
-  // Dynamic Diurnal projection synchronized with selected day from forecast
   const getSelectedDayHourly = () => {
     const rawHourly = weather?.hourly || [];
     if (selectedDayIndex === 0) {
@@ -228,7 +247,6 @@ export default function App() {
       ];
     }
 
-    // Mathematical curve calculation for selected subsequent days
     const activeDay = weather?.daily?.[selectedDayIndex] || {};
     const maxT = activeDay.max_temp ?? (cur.temp + 2);
     const minT = activeDay.min_temp ?? (cur.temp - 6);
@@ -236,7 +254,6 @@ export default function App() {
     const timeSlots = ["12 am", "3 am", "6 am", "9 am", "12 pm", "3 pm", "6 pm", "9 pm"];
 
     return timeSlots.map((slot, idx) => {
-      // Natural diurnal solar variance curve
       const solarCycle = [0.1, 0.0, 0.05, 0.45, 0.9, 1.0, 0.7, 0.35];
       const slotTemp = Math.round(minT + (maxT - minT) * solarCycle[idx]);
       const slotPrecip = Math.max(0, Math.round(dayRain * (0.4 + solarCycle[idx] * 0.6)));
@@ -271,7 +288,6 @@ export default function App() {
     return "☀️";
   };
 
-  // MATHEMATICAL SVG GRAPH ENGINE: Dynamic Bezier Spline
   const calculateRealCurve = (dataList, metric) => {
     if (!dataList || dataList.length === 0) return { path: "", area: "", coords: [], values: [] };
 
@@ -299,10 +315,10 @@ export default function App() {
 
     let strokePath = `M ${calculatedCoords[0].x},${calculatedCoords[0].y}`;
     for (let i = 0; i < calculatedCoords.length - 1; i++) {
-      const curr = calculatedCoords[i];
-      const next = calculatedCoords[i + 1];
-      const controlX = (curr.x + next.x) / 2;
-      strokePath += ` C ${controlX},${curr.y} ${controlX},${next.y} ${next.x},${next.y}`;
+      const curPt = calculatedCoords[i];
+      const nextPt = calculatedCoords[i + 1];
+      const controlX = (curPt.x + nextPt.x) / 2;
+      strokePath += ` C ${controlX},${curPt.y} ${controlX},${nextPt.y} ${nextPt.x},${nextPt.y}`;
     }
 
     const areaPath = `${strokePath} L ${width},${height} L 0,${height} Z`;
@@ -311,43 +327,46 @@ export default function App() {
 
   const { path: dynamicStroke, area: dynamicArea, coords: activeGraphPoints, values: activeGraphValues } = calculateRealCurve(activeHourlyData, activeMetric);
 
+  // Soft atmospheric card styles
   const cardBg = theme === 'dark' 
     ? 'bg-[#0d1322]/85 border-slate-700/60 text-slate-100 shadow-2xl' 
-    : 'bg-white/80 border-slate-200/90 text-slate-800 shadow-lg shadow-slate-200/50';
+    : 'bg-white/85 border-[#cbd5e1] text-slate-900 shadow-xl shadow-slate-300/60 backdrop-blur-md';
 
   const subCardBg = theme === 'dark'
     ? 'bg-[#080d1a] border-slate-800/80 text-slate-300'
-    : 'bg-slate-50 border-slate-200 text-slate-700';
+    : 'bg-[#f1f5f9] border-[#cbd5e1] text-slate-800';
 
   const headingText = theme === 'dark' ? 'text-white' : 'text-slate-900';
-  const subText = theme === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const subText = theme === 'dark' ? 'text-slate-400' : 'text-slate-600';
 
   return (
-    <div className={`fixed inset-0 flex flex-col overflow-hidden font-sans transition-colors duration-300 ${
-      theme === 'dark' ? 'bg-[#05070e] text-slate-100' : 'bg-slate-100 text-slate-900'
+    <div className={`min-h-screen w-full transition-colors duration-300 font-sans ${
+      theme === 'dark'
+        ? 'bg-[#050811] text-slate-100'
+        : 'bg-gradient-to-br from-[#dfe7f2] via-[#eaf0f8] to-[#d5e0ee] text-slate-800'
     }`}>
-      {/* Background Video */}
+      {/* Background Video Layer */}
       <video
         autoPlay
         loop
         muted
         playsInline
         onError={(e) => (e.currentTarget.style.display = 'none')}
-        className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-500 ${
-          theme === 'dark' ? 'opacity-60 filter brightness-110 contrast-110' : 'opacity-25 filter brightness-125'
+        className={`fixed inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-500 ${
+          theme === 'dark' ? 'opacity-60 filter brightness-110 contrast-110' : 'opacity-15 filter brightness-110'
         }`}
       >
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
 
-      <div className={`absolute inset-0 pointer-events-none z-0 transition-colors duration-300 ${
+      <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-300 ${
         theme === 'dark'
-          ? 'bg-gradient-to-b from-[#05070e]/70 via-[#05070e]/40 to-[#05070e]/80'
-          : 'bg-gradient-to-b from-slate-100/85 via-slate-100/70 to-slate-200/90'
+          ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/40 to-[#050811]/80'
+          : 'bg-gradient-to-b from-[#dfe7f2]/60 via-[#eaf0f8]/50 to-[#d5e0ee]/70'
       }`} />
 
       {/* Header Bar */}
-      <div className="flex-shrink-0 z-50">
+      <div className="relative z-50">
         <Header 
           weather={weather}
           coords={coords}
@@ -361,15 +380,15 @@ export default function App() {
         />
       </div>
 
-      {/* Main Observatory Screen */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative z-10" style={{ height: "calc(100vh - 64px)" }}>
+      {/* Main Screen Container */}
+      <main className="relative z-10 flex flex-col min-h-0 overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
               
               {/* Station Banner */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className={`lg:col-span-2 border rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden flex flex-col justify-between ${cardBg}`}>
+                <div className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl relative overflow-hidden flex flex-col justify-between ${cardBg}`}>
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
@@ -389,7 +408,13 @@ export default function App() {
                         {t.hardwareGps}: {coords ? `${formatNativeNumber(coords.lat.toFixed(4), lang)}°N, ${formatNativeNumber(coords.lon.toFixed(4), lang)}°E` : t.acquiring}
                       </p>
                     </div>
-                    <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
+                    
+                    <div className="flex flex-col items-end">
+                      <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
+                      <span className="text-xs font-mono font-bold text-amber-500 mt-2 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">
+                        {currentTime}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-8 flex flex-wrap items-end gap-6 sm:gap-10">
@@ -406,9 +431,9 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4 Corner Met Station Cards */}
+                {/* Auxiliary Atmospheric Vectors */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className={`border rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.windVelocity}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.wind, lang)}</span>
@@ -417,7 +442,7 @@ export default function App() {
                     <span className="text-[11px] text-emerald-500 font-medium">{t.surfaceVector}</span>
                   </div>
 
-                  <div className={`border rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.relativeHumidity}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.humidity, lang)}</span>
@@ -426,7 +451,7 @@ export default function App() {
                     <span className="text-[11px] text-cyan-500 font-medium">{t.atmosphericMoisture}</span>
                   </div>
 
-                  <div className={`border rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.precipitation}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.precipitation, lang)}</span>
@@ -435,7 +460,7 @@ export default function App() {
                     <span className="text-[11px] text-indigo-500 font-medium">{t.modelProbability}</span>
                   </div>
 
-                  <div className={`border rounded-2xl p-4 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.dewPoint}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.dew_point, lang)}</span>
@@ -446,10 +471,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Environmental Indices (AQI, UV, Agro) */}
+              {/* Environmental Indices */}
               <EnvironmentalPanel envData={envData} lang={lang} theme={theme} />
 
-              {/* DYNAMIC METRIC-DRIVEN DIURNAL TREND VECTOR GRAPH */}
+              {/* Diurnal Trend Vector Graph */}
               <div className={`border rounded-3xl p-6 backdrop-blur-xl space-y-4 ${cardBg}`}>
                 <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3 ${
                   theme === 'dark' ? 'border-slate-800' : 'border-slate-200'
@@ -481,7 +506,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Mathematical Dynamic Spline Canvas */}
                 <div className="relative w-full h-40 pt-4 overflow-visible">
                   <svg className="w-full h-full overflow-visible" viewBox="0 0 800 140" preserveAspectRatio="none">
                     <defs>
@@ -491,10 +515,8 @@ export default function App() {
                       </linearGradient>
                     </defs>
 
-                    {/* Gradient Area Fill */}
                     <path d={dynamicArea} fill="url(#realGraphFill)" />
 
-                    {/* True Telemetry Vector Spline */}
                     <path 
                       d={dynamicStroke} 
                       fill="none" 
@@ -504,7 +526,6 @@ export default function App() {
                       strokeLinejoin="round" 
                     />
 
-                    {/* Exact Coordinate Anchor Dots */}
                     {activeGraphPoints.map((pt, idx) => (
                       <g key={idx}>
                         <circle cx={pt.x} cy={pt.y} r="6" className="fill-[#0b101e] stroke-amber-400 stroke-2" />
@@ -513,11 +534,10 @@ export default function App() {
                     ))}
                   </svg>
 
-                  {/* Real Numbers Dynamically Positioned Exactly Over Each Coordinates */}
                   <div className="absolute inset-x-0 top-0 flex justify-between px-2 pointer-events-none font-mono text-xs font-bold">
                     {activeGraphValues.map((num, i) => (
                       <div key={i} className="flex flex-col items-center">
-                        <span className="text-amber-400 drop-shadow-md bg-[#050811]/70 px-1.5 py-0.5 rounded border border-amber-400/20">
+                        <span className="text-amber-500 drop-shadow-md bg-[#050811]/70 px-1.5 py-0.5 rounded border border-amber-400/20">
                           {formatNativeNumber(num, lang)}
                           {activeMetric === 'temp' ? '°' : activeMetric === 'precip' ? '%' : 'k'}
                         </span>
@@ -526,9 +546,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* X-Axis Dynamic Timestamps */}
                 <div className={`flex justify-between text-xs font-mono px-2 pt-2 border-t ${
-                  theme === 'dark' ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
+                  theme === 'dark' ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
                 }`}>
                   {activeHourlyData.map((h, i) => (
                     <span key={i} className="text-center">{h.time}</span>
@@ -536,7 +555,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 7-DAY SYNOPTIC FORECAST WITH SYNCHRONIZED DAY SELECTION */}
+              {/* 7-Day Synoptic Forecast */}
               <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className={`text-base font-semibold ${headingText}`}>{t.synopticForecast}</h3>
@@ -558,7 +577,7 @@ export default function App() {
                             : subCardBg
                         }`}
                       >
-                        <span className="text-xs font-medium text-slate-300">{d.day}</span>
+                        <span className="text-xs font-medium text-slate-400">{d.day}</span>
                         <span className="text-2xl my-2 drop-shadow">{renderWeatherSymbol(d.condition)}</span>
                         <span className={`text-[11px] truncate max-w-full ${subText}`}>{d.condition}</span>
                         <div className="mt-2 text-xs font-mono flex gap-1.5">
@@ -575,7 +594,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Other Application Views */}
         {currentPage === 'satellite' && (
           <div className="w-full h-full flex-1 overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
             <SatelliteView coords={coords} weather={weather} theme={theme} />
@@ -593,7 +611,7 @@ export default function App() {
               <ChatStream messages={messages} isLoading={isLoading} theme={theme} />
             </div>
             <div className={`flex-shrink-0 p-3 sm:p-4 border-t mt-auto backdrop-blur-xl ${
-              theme === 'dark' ? 'bg-[#05070e]/95 border-slate-800' : 'bg-white/95 border-slate-200'
+              theme === 'dark' ? 'bg-[#050811]/95 border-slate-800' : 'bg-white/95 border-slate-200'
             }`}>
               <ChatInput onSendMessage={handleSendMessage} isListening={isListening} setIsListening={setIsListening} disabled={isLoading} theme={theme} />
             </div>
