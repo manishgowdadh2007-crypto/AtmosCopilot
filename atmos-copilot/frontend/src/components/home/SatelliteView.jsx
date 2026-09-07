@@ -9,19 +9,25 @@ import {
   Play, 
   Pause, 
   RotateCcw, 
-  Compass
+  Compass,
+  Layers,
+  Map as MapIcon,
+  Globe
 } from 'lucide-react';
 
 export default function SatelliteView({ coords, weather, theme = 'dark' }) {
-  const [activeLayer, setActiveLayer] = useState('temp');
+  const [activeLayer, setActiveLayer] = useState('satellite'); // 'satellite' | 'wind' | 'pressure' | 'clouds' | 'temp' | 'radar'
   const [isPlaying, setIsPlaying] = useState(true);
   const [timelineIndex, setTimelineIndex] = useState(3);
   const [stationTime, setStationTime] = useState('');
-  const [zoomLevel, setZoomLevel] = useState(5);
+  const [zoomLevel, setZoomLevel] = useState(7);
 
   const lat = coords?.lat || 12.9716;
   const lon = coords?.lon || 77.5946;
-  const placeName = weather?.resolved_city || "Jagajeevanram Nagara, Bengaluru";
+  const placeName = weather?.resolved_city || "IPD Salappa Ward, Bengaluru";
+
+  // Google Maps API Key directly injected
+  const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyBhPlwJkVdXF158wum4Zglst7ALo9xs0gs";
 
   useEffect(() => {
     const updateTime = () => {
@@ -35,101 +41,63 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
 
   const timelineSteps = ["-45m", "-30m", "-15m", "LIVE", "+15m", "+30m"];
 
-  // Exact Zoom Earth Model Endpoints
-  const zoomEarthCloudUrl = `https://zoom.earth/maps/precipitation/#view=${lat},${lon},${zoomLevel}z/model=icon`;
-  const zoomEarthTempUrl = `https://zoom.earth/maps/temperature/#view=${lat},${lon},${zoomLevel}z/model=icon`;
-  const zoomEarthPressureUrl = `https://zoom.earth/maps/pressure/#view=${lat},${lon},${zoomLevel}z/model=icon`;
-  const windStreamUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%&height=100%&zoom=${zoomLevel}&level=surface&overlay=wind&product=ecmwf&menu=&message=&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`;
+  // 1. Google Maps Photorealistic Satellite Imagery Embed URL
+  const googleMapsSatelliteUrl = `https://www.google.com/maps/embed/v1/view?key=${GOOGLE_MAPS_KEY}&center=${lat},${lon}&zoom=${zoomLevel}&maptype=satellite`;
 
-  // Fallback map for local Doppler and Relative Humidity
-  const openStreetMapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lon - 3.5}%2C${lat - 2.8}%2C${lon + 3.5}%2C${lat + 2.8}&layer=mapnik&marker=${lat}%2C${lon}`;
+  // 2. Google Maps Hybrid Terrain & Transit Layer Embed URL
+  const googleMapsTerrainUrl = `https://www.google.com/maps/embed/v1/view?key=${GOOGLE_MAPS_KEY}&center=${lat},${lon}&zoom=${zoomLevel}&maptype=terrain`;
+
+  // 3. Meteorological Layer Overlays (Windy authorized embed endpoints)
+  const getWindyOverlayUrl = (overlayType) => {
+    return `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=100%&height=100%&zoom=${zoomLevel}&level=surface&overlay=${overlayType}&product=ecmwf&menu=&message=&marker=true&calendar=now&pressure=${overlayType === 'pressure' ? 'true' : 'false'}&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C`;
+  };
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#050811] font-sans">
       
-      {/* 1. LAYER RENDERING VIEWPORT */}
+      {/* 1. MAP VIEWPORT ENGINE */}
 
-      {/* CLOUD COVERAGE (ZOOM EARTH LIVE PRECIPITATION & CLOUDS) */}
-      {activeLayer === 'clouds' && (
+      {/* Case A: GOOGLE MAPS SATELLITE VIEW */}
+      {activeLayer === 'satellite' && (
         <iframe
-          key="cloud-model"
-          title="Zoom Earth Live Cloud & Precipitation Coverage"
-          src={zoomEarthCloudUrl}
-          className="w-full h-full border-0 absolute inset-0 z-0 filter contrast-105"
-          allow="geolocation"
+          key={`google-sat-${zoomLevel}`}
+          title="Google Maps True Satellite Imagery"
+          src={googleMapsSatelliteUrl}
+          className="w-full h-full border-0 absolute inset-0 z-0 filter contrast-105 brightness-95"
+          allowFullScreen
+          loading="lazy"
         />
       )}
 
-      {/* TEMPERATURE VIEW (ZOOM EARTH LIVE THERMAL HEATMAP) */}
-      {activeLayer === 'temp' && (
+      {/* Case B: GOOGLE MAPS TERRAIN TOPOLOGY */}
+      {activeLayer === 'terrain' && (
         <iframe
-          key="temp-model"
-          title="Zoom Earth Real-Time Temperature Surface"
-          src={zoomEarthTempUrl}
-          className="w-full h-full border-0 absolute inset-0 z-0 filter contrast-105"
-          allow="geolocation"
+          key={`google-terrain-${zoomLevel}`}
+          title="Google Maps Topographical Elevation"
+          src={googleMapsTerrainUrl}
+          className="w-full h-full border-0 absolute inset-0 z-0 filter invert hue-rotate-180 brightness-90 contrast-125"
+          allowFullScreen
+          loading="lazy"
         />
       )}
 
-      {/* PRESSURE DYNAMICS (ZOOM EARTH ISOBARS) */}
-      {activeLayer === 'pressure' && (
+      {/* Case C: METEOROLOGICAL FLUID LAYERS (Wind, Pressure, Clouds, Temp, Radar) */}
+      {activeLayer !== 'satellite' && activeLayer !== 'terrain' && (
         <iframe
-          key="pressure-model"
-          title="Zoom Earth Atmospheric Pressure Isobars"
-          src={zoomEarthPressureUrl}
-          className="w-full h-full border-0 absolute inset-0 z-0 filter contrast-105"
-          allow="geolocation"
-        />
-      )}
-
-      {/* WIND STREAM VECTORS (WINDY ECMWF FLUID DYNAMICS) */}
-      {activeLayer === 'wind' && (
-        <iframe
-          key="wind-model"
-          title="Live Surface Wind Stream Vectors"
-          src={windStreamUrl}
+          key={`met-${activeLayer}-${zoomLevel}`}
+          title={`Live Atmospheric ${activeLayer} Telemetry Map`}
+          src={getWindyOverlayUrl(
+            activeLayer === 'temp' ? 'temp' :
+            activeLayer === 'clouds' ? 'clouds' :
+            activeLayer === 'pressure' ? 'pressure' :
+            activeLayer === 'radar' ? 'radar' : 'wind'
+          )}
           className="w-full h-full border-0 absolute inset-0 z-0 filter brightness-95 contrast-105"
           allow="geolocation"
         />
       )}
 
-      {/* RADAR & HUMIDITY PROXY TILES */}
-      {activeLayer !== 'clouds' && activeLayer !== 'temp' && activeLayer !== 'pressure' && activeLayer !== 'wind' && (
-        <div className="relative w-full h-full">
-          <iframe
-            key="osm-base"
-            title="Observation Tile Surface"
-            src={openStreetMapUrl}
-            className="w-full h-full border-0 absolute inset-0 z-0 filter invert hue-rotate-180 brightness-75 contrast-125"
-          />
-
-          {activeLayer === 'radar' && (
-            <div 
-              className="absolute inset-0 z-10 pointer-events-none opacity-75"
-              style={{
-                backgroundImage: `radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.2), transparent 70%)`
-              }}
-            />
-          )}
-
-          {activeLayer === 'humidity' && (
-            <div className="absolute inset-0 z-10 pointer-events-none bg-cyan-900/30 mix-blend-overlay" />
-          )}
-
-          {/* Coordinate Lock Marker */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none flex flex-col items-center">
-            <div className="relative flex items-center justify-center">
-              <span className="absolute w-8 h-8 rounded-full bg-amber-400/30 animate-ping" />
-              <span className="relative w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-slate-950 shadow-lg shadow-amber-400/50" />
-            </div>
-            <span className="mt-1 px-2.5 py-0.5 rounded-full bg-slate-950/80 border border-amber-400/40 text-[10px] font-mono text-amber-300 backdrop-blur-md whitespace-nowrap shadow-md">
-              {placeName}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* 2. LAYER CONTROLS PANEL */}
+      {/* 2. Top-Left Observation Surface Switcher */}
       <div className="absolute top-5 left-5 z-20 w-64 flex flex-col gap-2 pointer-events-auto">
         <div className="bg-[#090e1a]/92 border border-slate-700/80 rounded-2xl p-3 backdrop-blur-xl shadow-2xl">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
@@ -141,36 +109,23 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
           </div>
 
           <div className="space-y-1">
+            {/* Google Maps Photorealistic Satellite View */}
             <button
-              onClick={() => setActiveLayer('radar')}
+              onClick={() => setActiveLayer('satellite')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
-                activeLayer === 'radar'
+                activeLayer === 'satellite'
                   ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
               }`}
             >
               <div className="flex items-center gap-2">
-                <Radio className="w-3.5 h-3.5" />
-                <span>Live Doppler Radar</span>
+                <Globe className="w-3.5 h-3.5 text-blue-400" />
+                <span>Google True Satellite</span>
               </div>
-              <span className="text-[9px] font-mono uppercase opacity-75">RAD</span>
+              <span className="text-[9px] font-mono uppercase opacity-75">IMG</span>
             </button>
 
-            <button
-              onClick={() => setActiveLayer('temp')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
-                activeLayer === 'temp'
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Thermometer className="w-3.5 h-3.5" />
-                <span>Temperature View</span>
-              </div>
-              <span className="text-[9px] font-mono uppercase opacity-75">TMP</span>
-            </button>
-
+            {/* Cloud Coverage View */}
             <button
               onClick={() => setActiveLayer('clouds')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
@@ -186,6 +141,23 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
               <span className="text-[9px] font-mono uppercase opacity-75">SAT</span>
             </button>
 
+            {/* Temperature Heatmap */}
+            <button
+              onClick={() => setActiveLayer('temp')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'temp'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Thermometer className="w-3.5 h-3.5" />
+                <span>Temperature View</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">TMP</span>
+            </button>
+
+            {/* Pressure Dynamics (Isobars) */}
             <button
               onClick={() => setActiveLayer('pressure')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
@@ -201,21 +173,7 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
               <span className="text-[9px] font-mono uppercase opacity-75">HPA</span>
             </button>
 
-            <button
-              onClick={() => setActiveLayer('humidity')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
-                activeLayer === 'humidity'
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Droplets className="w-3.5 h-3.5" />
-                <span>Relative Humidity View</span>
-              </div>
-              <span className="text-[9px] font-mono uppercase opacity-75">RH</span>
-            </button>
-
+            {/* Wind Stream Vectors */}
             <button
               onClick={() => setActiveLayer('wind')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
@@ -230,21 +188,35 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
               </div>
               <span className="text-[9px] font-mono uppercase opacity-75">SFC</span>
             </button>
+
+            {/* Doppler Rain Radar */}
+            <button
+              onClick={() => setActiveLayer('radar')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'radar'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Radio className="w-3.5 h-3.5" />
+                <span>Live Doppler Radar</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">RAD</span>
+            </button>
           </div>
 
           <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between">
-            <span>
-              Model: {activeLayer === 'clouds' ? 'ICON Cloud/Precip' : activeLayer === 'temp' ? 'ICON 2m Temp' : activeLayer === 'pressure' ? 'ICON MSL Pressure' : 'ECMWF Stream'}
-            </span>
-            <span className="text-emerald-400">Stream Sync</span>
+            <span>Engine: {activeLayer === 'satellite' ? 'Google Maps Platform' : 'ECMWF Stream Sync'}</span>
+            <span className="text-emerald-400">Lock: 100%</span>
           </div>
         </div>
       </div>
 
-      {/* 3. ZOOM LEVEL TOGGLES */}
+      {/* 3. Top-Right Zoom Controls */}
       <div className="absolute top-5 right-5 z-20 flex flex-col gap-2">
         <button
-          onClick={() => setZoomLevel((prev) => Math.min(prev + 1, 10))}
+          onClick={() => setZoomLevel((prev) => Math.min(prev + 1, 14))}
           className="w-9 h-9 rounded-xl bg-[#0b101e]/90 border border-slate-700/80 text-white flex items-center justify-center hover:bg-slate-800 active:scale-95 transition shadow-xl font-bold text-base"
           title="Zoom In"
         >
@@ -259,8 +231,32 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
         </button>
       </div>
 
-      {/* 4. DYNAMIC SCALE LEGEND */}
+      {/* 4. Bottom Legend Scale */}
       <div className="absolute bottom-16 left-5 z-20 hidden sm:flex flex-col bg-[#0b101e]/90 border border-slate-800 px-3.5 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl">
+        {activeLayer === 'satellite' && (
+          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-300">
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span>High-Resolution Orbital Surface Imagery</span>
+          </div>
+        )}
+
+        {activeLayer === 'clouds' && (
+          <>
+            <span className="text-[10px] font-mono text-slate-400 mb-1.5 flex items-center gap-1.5">
+              <Cloud className="w-3 h-3 text-cyan-400" />
+              Cloud Cover & Precipitation Potential
+            </span>
+            <div className="h-2 w-64 rounded-full bg-gradient-to-r from-slate-600 via-blue-400 via-amber-400 to-rose-600 mb-1" />
+            <div className="flex justify-between text-[9px] font-mono text-slate-400">
+              <span>Clear</span>
+              <span>25%</span>
+              <span>50%</span>
+              <span>75%</span>
+              <span>100% Dense</span>
+            </div>
+          </>
+        )}
+
         {activeLayer === 'temp' && (
           <>
             <span className="text-[10px] font-mono text-slate-400 mb-1.5 flex items-center gap-1.5">
@@ -274,23 +270,6 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
               <span>28°C</span>
               <span>34°C</span>
               <span>42°C+</span>
-            </div>
-          </>
-        )}
-
-        {activeLayer === 'clouds' && (
-          <>
-            <span className="text-[10px] font-mono text-slate-400 mb-1.5 flex items-center gap-1.5">
-              <Cloud className="w-3 h-3 text-cyan-400" />
-              Precipitation Rate & Cloud Cover
-            </span>
-            <div className="h-2 w-64 rounded-full bg-gradient-to-r from-slate-600 via-blue-400 via-amber-400 to-rose-600 mb-1" />
-            <div className="flex justify-between text-[9px] font-mono text-slate-400">
-              <span>Rain</span>
-              <span>Light</span>
-              <span>Moderate</span>
-              <span>Heavy</span>
-              <span>Severe</span>
             </div>
           </>
         )}
@@ -329,9 +308,25 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
             </div>
           </>
         )}
+
+        {activeLayer === 'radar' && (
+          <>
+            <span className="text-[10px] font-mono text-slate-400 mb-1.5 flex items-center gap-1.5">
+              <Radio className="w-3 h-3 text-emerald-400" />
+              Doppler Reflectivity (dBZ)
+            </span>
+            <div className="h-2 w-64 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 via-amber-400 to-rose-600 mb-1" />
+            <div className="flex justify-between text-[9px] font-mono text-slate-400">
+              <span>15 (Light)</span>
+              <span>30 (Moderate)</span>
+              <span>45 (Heavy)</span>
+              <span>60+ (Severe)</span>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* 5. TELEMETRY STATUS BAR */}
+      {/* 5. Bottom Telemetry Bar */}
       <div className="absolute bottom-5 inset-x-5 z-20 flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#0b101e]/92 border border-slate-700/80 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-2xl">
         <div className="flex items-center gap-2">
           <button
@@ -353,6 +348,7 @@ export default function SatelliteView({ coords, weather, theme = 'dark' }) {
           </div>
         </div>
 
+        {/* Timeline increments */}
         <div className="flex items-center gap-1.5 bg-[#060913] p-1 rounded-xl border border-slate-800">
           {timelineSteps.map((step, idx) => (
             <button
