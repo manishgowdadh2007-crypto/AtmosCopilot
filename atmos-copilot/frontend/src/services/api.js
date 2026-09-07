@@ -106,7 +106,24 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
   }
 };
 
-// 3. User Authentication Protocols
+// 3. User Authentication & OTP Verification Protocols
+export const requestPhoneOtp = async (phone, purpose) => {
+  try {
+    const res = await fetch(`${BASE_URL}/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, purpose }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || "Failed to dispatch OTP");
+    }
+    return data;
+  } catch (err) {
+    throw err;
+  }
+};
+
 export const registerUser = async (userData) => {
   try {
     const res = await fetch(`${BASE_URL}/register`, {
@@ -134,6 +151,23 @@ export const loginUser = async (credentials) => {
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.detail || data.error || "Login failed");
+    }
+    return data;
+  } catch (err) {
+    throw err;
+  }
+};
+
+export const resetPassword = async (payload) => {
+  try {
+    const res = await fetch(`${BASE_URL}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || "Password reset failed");
     }
     return data;
   } catch (err) {
