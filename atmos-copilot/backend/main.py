@@ -1,7 +1,7 @@
 import os
 import re
 import sqlite3
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime
 from fastapi import FastAPI, Query, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +10,7 @@ import httpx
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AtmosCopilot Core & Google Meteorological Engine", version="1.1.0")
+app = FastAPI(title="AtmosCopilot Dynamic Telemetry Engine", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,8 +40,13 @@ init_db()
 
 # 2. Key Provisioning
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "AIzaSyBhPlwJkVdXF158wum4Zglst7ALo9xs0gs")
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+class QueryRequest(BaseModel):
+    query: str
+    lat: float
+    lon: float
 
 class RegisterSchema(BaseModel):
     name: str
@@ -59,226 +64,187 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-class QueryRequest(BaseModel):
-    query: str
-    lat: float
-    lon: float
+# 3. Dynamic Location Name Extraction (Handles Any Global Area/Typo)
+def extract_place_from_prompt(prompt: str) -> Optional[str]:
+    text = prompt.strip()
+    
+    # Common conversational query patterns
+    patterns = [
+        r"(?:weather|forecast|rain|temperature|temp|climate|conditions)\s+(?:in|at|for|around|of)\s+([a-zA-Z\s,]+)",
+        r"(?:in|at|for)\s+([a-zA-Z\s,]+)\s+(?:weather|forecast|rain|climate|temperature)",
+        r"what(?:'s|\s+is)\s+(?:the\s+)?weather\s+(?:like\s+)?(?:in|at|for)\s+([a-zA-Z\s,]+)",
+        r"how(?:'s|\s+is)\s+(?:the\s+)?weather\s+(?:in|at|for)\s+([a-zA-Z\s,]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            candidate = match.group(1).strip("?.!, ")
+            cleaned = re.sub(r"\b(today|tomorrow|now|currently|tonight|please)\b", "", candidate, flags=re.IGNORECASE).strip()
+            if cleaned and len(cleaned) >= 2:
+                return cleaned
 
-# 3. Micro-Locality Geocoding via Google
-async def fetch_google_precise_location(lat: float, lon: float) -> str:
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_MAPS_API_KEY}"
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    # Fallback: remove syntax noise tokens and isolate place candidate
+    noise = {"what", "is", "the", "weather", "forecast", "temp", "temperature", "rain", 
+             "in", "at", "for", "how", "like", "today", "now", "tell", "me", "about"}
+    words = [w.strip("?.!,") for w in text.split() if w.strip("?.!,").lower() not in noise]
+    if words:
+        candidate = " ".join(words).strip()
+        if len(candidate) >= 2:
+            return candidate
+
+    return None
+
+# 4. Live Geocoding for Any Arbitrary Place Name
+async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
+    if not place:
+        return None
+
+    clean_place = place.strip()
+
+    # Priority A: Google Geocoding API if key is present
+    if GOOGLE_MAPS_API_KEY:
+        google_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_place}&key={GOOGLE_MAPS_API_KEY}"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                res = await client.get(google_url)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("results"):
+                        item = data["results"][0]
+                        lat = item["geometry"]["location"]["lat"]
+                        lon = item["geometry"]["location"]["lng"]
+                        name = item.get("formatted_address", clean_place).split(",")[0]
+                        return lat, lon, name
+            except Exception:
+                pass
+
+    # Priority B: OpenStreetMap Nominatim Live Geocoder (Global & Keyless Fallback)
+    osm_url = f"https://nominatim.openstreetmap.org/search?q={clean_place}&format=json&limit=1"
+    async with httpx.AsyncClient(timeout=6.0) as client:
         try:
-            res = await client.get(url)
+            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.0"})
             if res.status_code == 200:
                 data = res.json()
-                if data.get("results"):
-                    first_res = data["results"][0]
-                    sublocality = ""
-                    locality = ""
-                    for comp in first_res.get("address_components", []):
-                        comp_types = comp.get("types", [])
-                        if "sublocality" in comp_types or "sublocality_level_1" in comp_types or "neighborhood" in comp_types:
-                            sublocality = comp.get("long_name", "")
-                        if "locality" in comp_types:
-                            locality = comp.get("long_name", "")
-                    
-                    if sublocality and locality:
-                        return f"{sublocality}, {locality}"
-                    return first_res.get("formatted_address", "Current Station Lock").split(",")[0]
+                if data and len(data) > 0:
+                    lat = float(data[0]["lat"])
+                    lon = float(data[0]["lon"])
+                    display_name = data[0]["display_name"].split(",")[0]
+                    return lat, lon, display_name
         except Exception:
             pass
-    return "Bengaluru, Karnataka"
 
-# Helper to cleanly extract a validated string place name
-async def resolve_place_name(lat: float, lon: float, city: Optional[str] = None) -> str:
-    if city and isinstance(city, str) and not city.startswith("annotation="):
-        return city
-    return await fetch_google_precise_location(lat, lon)
+    return None
 
-# 4. Google Air Quality API Integration
-async def fetch_google_air_quality(lat: float, lon: float):
-    url = f"https://airquality.googleapis.com/v1/currentConditions:lookup?key={GOOGLE_MAPS_API_KEY}"
-    payload = {
-        "location": {"latitude": lat, "longitude": lon},
-        "extraComputations": ["LOCAL_AQI", "POLLUTANT_CONCENTRATION"]
-    }
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        try:
-            res = await client.post(url, json=payload)
-            if res.status_code == 200:
-                data = res.json()
-                indexes = data.get("indexes", [{}])[0]
-                return {
-                    "aqi": indexes.get("aqi", 42),
-                    "category": indexes.get("category", "Good"),
-                    "dominantPollutant": indexes.get("dominantPollutant", "pm25")
-                }
-        except Exception:
-            pass
-    return {"aqi": 42, "category": "Good", "dominantPollutant": "pm25"}
-
-# 5. Core Weather Telemetry Router
-@app.get("/api/weather-telemetry")
-async def get_weather_telemetry(
-    lat: float = Query(...),
-    lon: float = Query(...),
-    city: Optional[str] = Query(default=None)
-):
-    resolved_place = await resolve_place_name(lat, lon, city)
-    aq_data = await fetch_google_air_quality(lat, lon)
-
+# 5. Fetch Live Open-Meteo Grid Telemetry for Exact Lat/Lon Coordinates
+async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str) -> dict:
     meteo_url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}"
-        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m"
-        f"&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,surface_pressure,wind_speed_10m"
-        f"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max"
+        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m"
+        f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"
         f"&timezone=auto"
     )
 
+    def wmo_to_condition(code: int) -> str:
+        if code == 0: return "Clear Sky"
+        if code in [1, 2]: return "Mainly Clear / Partly Cloudy"
+        if code == 3: return "Overcast"
+        if code in [45, 48]: return "Fog"
+        if code in [51, 53, 55]: return "Drizzle"
+        if code in [61, 63, 65]: return "Rain"
+        if code in [80, 81, 82]: return "Rain Showers"
+        if code in [95, 96, 99]: return "Thunderstorm"
+        return "Partly Cloudy"
+
     async with httpx.AsyncClient(timeout=8.0) as client:
-        try:
-            m_res = await client.get(meteo_url)
-            data = m_res.json()
-            curr = data.get("current", {})
-            hourly_raw = data.get("hourly", {})
-            daily_raw = data.get("daily", {})
+        res = await client.get(meteo_url)
+        res.raise_for_status()
+        data = res.json()
+        current = data.get("current", {})
+        daily = data.get("daily", {})
 
-            def parse_condition(code):
-                if code == 0: return "Clear Sky"
-                if code in [1, 2, 3]: return "Partly Cloudy"
-                if code in [45, 48]: return "Foggy"
-                if code in [51, 53, 55, 61, 63, 65, 80, 81]: return "Rain Showers"
-                if code in [95, 96, 99]: return "Thunderstorm"
-                return "Partly Cloudy"
+        cur_temp = round(current.get("temperature_2m", 0))
+        cur_humidity = round(current.get("relative_humidity_2m", 0))
+        cur_wind = round(current.get("wind_speed_10m", 0))
+        cur_precip = round(current.get("precipitation", 0))
+        cur_pressure = round(current.get("surface_pressure", 1013))
+        cur_condition = wmo_to_condition(current.get("weather_code", 0))
 
-            cur_temp = round(curr.get("temperature_2m", 28))
-            cur_humidity = round(curr.get("relative_humidity_2m", 50))
-            cur_wind = round(curr.get("wind_speed_10m", 9))
-            cur_precip = round(curr.get("precipitation", 0))
-            cur_pressure = round(curr.get("surface_pressure", 1012))
-            cur_condition = parse_condition(curr.get("weather_code", 1))
+        max_temp = round(daily.get("temperature_2m_max", [cur_temp])[0])
+        min_temp = round(daily.get("temperature_2m_min", [cur_temp])[0])
+        rain_prob = daily.get("precipitation_probability_max", [0])[0]
 
-            now_hour = datetime.now().hour
-            hourly_times = hourly_raw.get("time", [])
-            hourly_temps = hourly_raw.get("temperature_2m", [])
-            hourly_precip = hourly_raw.get("precipitation_probability", [])
-            hourly_winds = hourly_raw.get("wind_speed_10m", [])
-
-            hourly_list = []
-            for i in range(now_hour, min(now_hour + 24, len(hourly_times)), 3):
-                dt_point = datetime.fromisoformat(hourly_times[i])
-                h_val = dt_point.hour
-                t_lbl = "12 am" if h_val == 0 else f"{h_val - 12} pm" if h_val >= 12 else f"{h_val} am"
-                if h_val == 12: t_lbl = "12 pm"
-
-                hourly_list.append({
-                    "time": t_lbl,
-                    "temp": round(hourly_temps[i]),
-                    "precip": hourly_precip[i] if i < len(hourly_precip) else 0,
-                    "wind": round(hourly_winds[i]) if i < len(hourly_winds) else 10
-                })
-
-            d_times = daily_raw.get("time", [])
-            d_max = daily_raw.get("temperature_2m_max", [])
-            d_min = daily_raw.get("temperature_2m_min", [])
-            d_code = daily_raw.get("weather_code", [])
-            d_rain = daily_raw.get("precipitation_probability_max", [])
-
-            daily_list = []
-            for idx in range(min(7, len(d_times))):
-                date_obj = datetime.fromisoformat(d_times[idx])
-                d_title = "Today" if idx == 0 else date_obj.strftime("%a")
-                daily_list.append({
-                    "day": d_title,
-                    "max_temp": round(d_max[idx]) if idx < len(d_max) else 31,
-                    "min_temp": round(d_min[idx]) if idx < len(d_min) else 21,
-                    "condition": parse_condition(d_code[idx]) if idx < len(d_code) else "Partly Cloudy",
-                    "chance_of_rain": d_rain[idx] if idx < len(d_rain) else 10
-                })
-
-            return {
-                "latitude": lat,
-                "longitude": lon,
-                "resolved_city": resolved_place,
-                "current": {
-                    "temp": cur_temp,
-                    "condition": cur_condition,
-                    "humidity": cur_humidity,
-                    "wind": cur_wind,
-                    "pressure": cur_pressure,
-                    "precipitation": cur_precip,
-                    "dew_point": round(cur_temp - ((100 - cur_humidity) / 5)),
-                    "uv_index": round(daily_raw.get("uv_index_max", [0])[0]),
-                    "aqi": aq_data["aqi"],
-                    "air_quality_category": aq_data["category"]
-                },
-                "hourly": hourly_list,
-                "daily": daily_list
+        return {
+            "resolved_city": location_label,
+            "latitude": lat,
+            "longitude": lon,
+            "current": {
+                "temp": cur_temp,
+                "condition": cur_condition,
+                "humidity": cur_humidity,
+                "wind": cur_wind,
+                "pressure": cur_pressure,
+                "precipitation": cur_precip,
+                "dew_point": round(cur_temp - ((100 - cur_humidity) / 5)),
+                "max_temp": max_temp,
+                "min_temp": min_temp,
+                "rain_prob": rain_prob
             }
-        except Exception:
-            return {
-                "latitude": lat,
-                "longitude": lon,
-                "resolved_city": resolved_place,
-                "current": {
-                    "temp": 28,
-                    "condition": "Partly Cloudy",
-                    "humidity": 50,
-                    "wind": 9,
-                    "precipitation": 0,
-                    "dew_point": 18,
-                    "pressure": 1012,
-                    "uv_index": 0,
-                    "aqi": 42
-                },
-                "hourly": [
-                    {"time": "8 pm", "temp": 27, "precip": 0, "wind": 9},
-                    {"time": "11 pm", "temp": 23, "precip": 0, "wind": 8},
-                    {"time": "2 am", "temp": 21, "precip": 0, "wind": 7},
-                    {"time": "5 am", "temp": 20, "precip": 0, "wind": 7}
-                ],
-                "daily": [
-                    {"day": "Today", "max_temp": 31, "min_temp": 21, "condition": "Clear", "chance_of_rain": 0}
-                ]
-            }
+        }
 
-# 6. Gemini Grounded Intelligence with Live Telemetry
+# 6. Sun Copilot Dynamic Multi-Area Endpoint
 @app.post("/api/ai-query")
 @app.post("/api/copilot")
 async def copilot_intelligence(req: QueryRequest):
-    telemetry = await get_weather_telemetry(lat=req.lat, lon=req.lon, city=None)
-    cur = telemetry.get("current", {})
-    resolved_place = telemetry.get("resolved_city", "Current Locality")
+    queried_place = extract_place_from_prompt(req.query)
 
-    # If the user explicitly asks about another destination, dynamically update target entity
-    query_lower = req.query.lower()
-    target_city = resolved_place
-    for token in query_lower.replace("?", "").split():
-        if token in ["kodagu", "coorg", "mysuru", "mysore", "mandya", "delhi", "mumbai", "hassan"]:
-            target_city = token.title()
-            break
+    target_lat = req.lat
+    target_lon = req.lon
+    target_name = "your current location"
 
+    # If the user typed a specific area, resolve target coordinates dynamically
+    if queried_place:
+        geocoded = await resolve_place_coordinates(queried_place)
+        if geocoded:
+            target_lat, target_lon, target_name = geocoded
+        else:
+            target_name = queried_place
+
+    try:
+        telemetry = await fetch_live_grid_telemetry(target_lat, target_lon, target_name)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502, 
+            detail=f"Live meteorological telemetry unavailable for coordinates ({target_lat}, {target_lon}): {str(e)}"
+        )
+
+    cur = telemetry["current"]
+
+    # When Gemini API client is not configured, reply with direct telemetry
     if not gemini_client or not GEMINI_API_KEY:
         return {
-            "reply": f"Current weather in {target_city}: {cur.get('condition', 'Partly Cloudy')} at {cur.get('temp', 28)}°C, {cur.get('humidity', 50)}% humidity, and winds at {cur.get('wind', 9)} km/h.",
+            "reply": f"Current weather in {target_name}: {cur['condition']} at {cur['temp']}°C (High: {cur['max_temp']}°C, Low: {cur['min_temp']}°C) with {cur['humidity']}% humidity, {cur['wind']} km/h wind, and {cur['rain_prob']}% chance of rain.",
             "telemetry": telemetry,
-            "engine": "local_telemetry"
+            "engine": "live_grid_telemetry"
         }
 
     system_instruction = (
-        "You are Sun Copilot, the meteorological AI assistant for AtmosCopilot. "
-        "Answer weather inquiries directly, concisely, and factually without introductory greetings or meta statements."
+        "You are Sun Copilot, the live meteorological AI core for AtmosCopilot. "
+        "Answer weather questions directly, concisely, and factually without conversational filler. "
+        "You MUST base your response strictly on the live telemetry provided below. Do not use static templates."
     )
 
     context_prompt = f"""
-Target Locality: {target_city}
-Observed Temperature: {cur.get('temp')}°C
-Condition: {cur.get('condition')}
-Relative Humidity: {cur.get('humidity')}%
-Surface Wind Velocity: {cur.get('wind')} km/h
-Precipitation Rate: {cur.get('precipitation')}%
+[LIVE VERIFIED METEOROLOGICAL TELEMETRY]
+Target Locality: {target_name}
+Coordinates: {target_lat:.4f}°N, {target_lon:.4f}°E
+Current Temperature: {cur['temp']}°C (Forecast High: {cur['max_temp']}°C / Low: {cur['min_temp']}°C)
+Atmospheric Condition: {cur['condition']}
+Relative Humidity: {cur['humidity']}%
+Surface Wind Velocity: {cur['wind']} km/h
+Precipitation Rate: {cur['precipitation']} mm
+Precipitation Probability: {cur['rain_prob']}%
+Surface Pressure: {cur['pressure']} hPa
 
 User Question:
 "{req.query}"
@@ -290,8 +256,8 @@ User Question:
             contents=context_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=0.2,
-                max_output_tokens=250
+                temperature=0.1,
+                max_output_tokens=200
             )
         )
         return {
@@ -301,12 +267,22 @@ User Question:
         }
     except Exception:
         return {
-            "reply": f"Current weather in {target_city}: {cur.get('condition')} at {cur.get('temp')}°C with {cur.get('humidity')}% humidity and winds at {cur.get('wind')} km/h.",
+            "reply": f"Current weather in {target_name}: {cur['condition']} at {cur['temp']}°C with {cur['humidity']}% humidity and {cur['wind']} km/h wind.",
             "telemetry": telemetry,
-            "engine": "fallback"
+            "engine": "live_telemetry_fallback"
         }
 
-# 7. Authentication Endpoints
+# 7. Standard Telemetry Endpoint
+@app.get("/api/weather-telemetry")
+async def get_weather_telemetry(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    city: Optional[str] = Query(default=None)
+):
+    target_name = city or "Current Station"
+    return await fetch_live_grid_telemetry(lat, lon, target_name)
+
+# 8. User Auth Endpoints
 @app.post("/api/register", status_code=status.HTTP_201_CREATED)
 def register(user: RegisterSchema):
     if not re.match(r"^[a-zA-Z\s]+$", user.name):
@@ -342,6 +318,21 @@ def login(creds: LoginSchema):
         raise HTTPException(status_code=401, detail="Invalid credentials.")
     return {"status": "authenticated", "user": {"name": row[0], "email": row[1], "phone": row[2]}}
 
+@app.post("/api/reset-password")
+def reset_password(payload: ResetPasswordSchema):
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    conn = sqlite3.connect("atmos_users.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET password = ? WHERE (LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)) AND phone = ?",
+                   (payload.new_password.strip(), payload.identifier, payload.identifier, payload.phone))
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Account not found or details incorrect.")
+    conn.commit()
+    conn.close()
+    return {"status": "password_updated"}
+
 @app.get("/")
 def root():
-    return {"status": "online", "engine": "Google Meteorological Core"}
+    return {"status": "online", "engine": "Dynamic Multi-Region Meteorological Core"}
