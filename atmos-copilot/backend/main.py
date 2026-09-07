@@ -1,9 +1,11 @@
 from typing import Optional
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 import httpx
+import sqlite3
 import re
 
 app = FastAPI(title="AtmosCopilot IMD Meteorological Core", version="1.0.0")
@@ -16,31 +18,125 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class UserRegisterRequest(BaseModel):
+# Database Initialization
+def init_db():
+    conn = sqlite3.connect("atmos_users.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            phone TEXT NOT NULL,
+            password TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Schemas
+class RegisterSchema(BaseModel):
     name: str
     email: str
     phone: str
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    password: str
 
-user_db = []
+class LoginSchema(BaseModel):
+    identifier: str
+    phone: str
+    password: str
 
+class QueryRequest(BaseModel):
+    query: str
+    lat: float
+    lon: float
+
+# Routes
 @app.get("/")
 def read_root():
     return {"status": "online", "station": "IMD Bengaluru Meteorological Observatory"}
 
-@app.post("/api/register")
-async def register_user_session(user: UserRegisterRequest):
-    record = {
-        "name": user.name.strip(),
-        "email": user.email.strip().lower(),
-        "phone": user.phone.strip(),
-        "latitude": user.latitude,
-        "longitude": user.longitude,
-        "timestamp": datetime.now().isoformat()
+@app.post("/api/register", status_code=status.HTTP_201_CREATED)
+def register(user: RegisterSchema):
+    # Validate name (words/spaces only)
+    if not re.match(r"^[a-zA-Z\s]+$", user.name):
+        raise HTTPException(status_code=400, detail="Name can only contain letters and spaces.")
+    
+    # Validate email
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", user.email):
+        raise HTTPException(status_code=400, detail="Invalid email format.")
+    
+    # Validate phone (exact 10 digits)
+    if not re.match(r"^\d{10}$", user.phone):
+        raise HTTPException(status_code=400, detail="Phone number must be exactly 10 digits.")
+    
+    # Validate password
+    if len(user.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    conn = sqlite3.connect("atmos_users.db")
+    cursor = conn.cursor()
+
+    # Check for duplicate email or duplicate name
+    cursor.execute(
+        "SELECT email, name FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)", 
+        (user.email, user.name)
+    )
+    existing = cursor.fetchone()
+    
+    if existing:
+        conn.close()
+        if existing[0].lower() == user.email.lower():
+            raise HTTPException(status_code=409, detail="Email address is already registered.")
+        raise HTTPException(status_code=409, detail="Operator name is already taken.")
+
+    cursor.execute(
+        "INSERT INTO users (name, email, phone, password) VALUES (?, ?, ?, ?)",
+        (user.name.strip(), user.email.lower().strip(), user.phone.strip(), user.password.strip())
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "registered",
+        "user": {
+            "name": user.name.strip(),
+            "email": user.email.lower().strip(),
+            "phone": user.phone.strip()
+        }
     }
-    user_db.append(record)
-    return {"status": "success", "user": record}
+
+@app.post("/api/login")
+def login(creds: LoginSchema):
+    conn = sqlite3.connect("atmos_users.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT name, email, phone FROM users 
+        WHERE (LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?)) 
+          AND phone = ? 
+          AND password = ?
+    """, (creds.identifier, creds.identifier, creds.phone, creds.password))
+    
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid credentials. Verify your name/email, mobile, and password."
+        )
+
+    return {
+        "status": "authenticated",
+        "user": {
+            "name": row[0],
+            "email": row[1],
+            "phone": row[2]
+        }
+    }
 
 async def fetch_imd_bengaluru_telemetry():
     """Scrapes real-time station metrics directly from IMD Bengaluru's portal."""
@@ -96,7 +192,6 @@ async def get_weather_telemetry(
     resolved_place = city or "Bengaluru (IMD Station)"
     imd_data = await fetch_imd_bengaluru_telemetry()
 
-    # Numerical projection engine for hourly curve & 7-day trend
     open_meteo_url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}"
@@ -130,155 +225,4 @@ async def get_weather_telemetry(
             hourly_list = []
             for i in range(now_hour, min(now_hour + 24, len(hourly_times)), 3):
                 dt_point = datetime.fromisoformat(hourly_times[i])
-                h_val = dt_point.hour
-                t_lbl = "12 am" if h_val == 0 else f"{h_val - 12} pm" if h_val >= 12 else f"{h_val} am"
-                if h_val == 12:
-                    t_lbl = "12 pm"
-
-                hourly_list.append({
-                    "time": t_lbl,
-                    "temp": round(hourly_temps[i]),
-                    "precip": hourly_precip[i] if i < len(hourly_precip) else 0,
-                    "wind": round(hourly_winds[i]) if i < len(hourly_winds) else 10
-                })
-
-            # 7-Day Synoptic Forecast
-            d_times = daily_raw.get("time", [])
-            d_max = daily_raw.get("temperature_2m_max", [])
-            d_min = daily_raw.get("temperature_2m_min", [])
-            daily_list = []
-            for idx in range(min(7, len(d_times))):
-                date_obj = datetime.fromisoformat(d_times[idx])
-                d_title = "Today" if idx == 0 else date_obj.strftime("%a")
-                daily_list.append({
-                    "day": d_title,
-                    "max_temp": round(d_max[idx]),
-                    "min_temp": round(d_min[idx]),
-                    "condition": "Partly Cloudy",
-                    "chance_of_rain": daily_raw.get("precipitation_probability_max", [10])[idx]
-                })
-
-            return {
-                "latitude": lat,
-                "longitude": lon,
-                "resolved_city": resolved_place,
-                "station_source": "India Meteorological Department (IMD Bengaluru)",
-                "current": {
-                    "temp": cur_temp,
-                    "condition": "Partly Cloudy",
-                    "humidity": cur_hum,
-                    "wind": cur_wind,
-                    "wind_dir": wind_dir,
-                    "precipitation": round(m_curr.get("precipitation", 0)),
-                    "dew_point": round(cur_temp - ((100 - cur_hum) / 5)),
-                    "sunrise": imd_data.get("sunrise", "06:09") if imd_data else "06:09",
-                    "sunset": imd_data.get("sunset", "18:28") if imd_data else "18:28"
-                },
-                "hourly": hourly_list,
-                "daily": daily_list
-            }
-        except Exception:
-            # High-fidelity offline fallback aligned with IMD seasonal baselines
-            return {
-                "latitude": lat,
-                "longitude": lon,
-                "resolved_city": resolved_place,
-                "station_source": "IMD Bengaluru Observatory",
-                "current": {
-                    "temp": 26,
-                    "condition": "Partly Cloudy",
-                    "humidity": 72,
-                    "wind": 10,
-                    "wind_dir": "Southwesterly",
-                    "precipitation": 10,
-                    "dew_point": 20,
-                    "sunrise": "06:09",
-                    "sunset": "18:28"
-                },
-                "hourly": [
-                    {"time": "12 am", "temp": 21, "precip": 5, "wind": 8},
-                    {"time": "3 am", "temp": 20, "precip": 5, "wind": 7},
-                    {"time": "6 am", "temp": 20, "precip": 10, "wind": 6},
-                    {"time": "9 am", "temp": 24, "precip": 10, "wind": 9},
-                    {"time": "12 pm", "temp": 28, "precip": 15, "wind": 12},
-                    {"time": "3 pm", "temp": 29, "precip": 20, "wind": 14},
-                    {"time": "6 pm", "temp": 27, "precip": 15, "wind": 11},
-                    {"time": "9 pm", "temp": 24, "precip": 10, "wind": 9}
-                ],
-                "daily": [
-                    {"day": "Today", "max_temp": 29, "min_temp": 20, "condition": "Partly Cloudy"},
-                    {"day": "Sun", "max_temp": 30, "min_temp": 20, "condition": "Partly Cloudy"},
-                    {"day": "Mon", "max_temp": 30, "min_temp": 21, "condition": "Rain"},
-                    {"day": "Tue", "max_temp": 29, "min_temp": 21, "condition": "Partly Cloudy"},
-                    {"day": "Wed", "max_temp": 29, "min_temp": 20, "condition": "Overcast"},
-                    {"day": "Thu", "max_temp": 28, "min_temp": 19, "condition": "Rain"},
-                    {"day": "Fri", "max_temp": 29, "min_temp": 20, "condition": "Partly Cloudy"}
-                ]
-            }
-
-class QueryRequest(BaseModel):
-    query: str
-    lat: float
-    lon: float
-
-@app.post("/api/ai-query")
-@app.post("/api/copilot")
-async def copilot_intelligence(req: QueryRequest):
-    q = req.query.strip().lower()
-    telemetry = await get_weather_telemetry(lat=req.lat, lon=req.lon)
-    cur = telemetry.get("current", {})
-    temp = cur.get("temp", 26)
-    wind = cur.get("wind", 10)
-    wind_dir = cur.get("wind_dir", "Southwesterly")
-    humidity = cur.get("humidity", 72)
-
-    if "rain" in q:
-        reply = f"According to IMD Bengaluru telemetry, precipitation chance is currently low ({cur.get('precipitation', 0)}%)."
-    elif "temp" in q:
-        reply = f"IMD Bengaluru station reports {temp}°C with {humidity}% relative humidity and {wind_dir} winds at {wind} km/h."
-    else:
-        reply = f"IMD Bengaluru Observation: {cur.get('condition')} at {temp}°C, winds {wind_dir} at {wind} km/h."
-
-    return {"reply": reply, "telemetry": telemetry}
-from fastapi.responses import Response
-
-@app.get("/api/imd-radar")
-async def get_imd_radar_proxy():
-    """Streams official IMD Bengaluru Doppler Weather Radar (DWR) without CORS/hotlink blocks."""
-    imd_radar_urls = [
-        "https://mausam.imd.gov.in/Radar/BLR_MAXZ.gif",
-        "https://mausam.imd.gov.in/Radar/dist_bengaluru.gif",
-        "https://mausam.imd.gov.in/Radar/BLR_PAC.gif",
-        "https://internal.imd.gov.in/section/dwr/img/radar/BLR_MAXZ.gif"
-    ]
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Referer": "https://mausam.imd.gov.in/bengaluru/",
-        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-    }
-
-    async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-        for url in imd_radar_urls:
-            try:
-                res = await client.get(url, headers=headers)
-                if res.status_code == 200 and len(res.content) > 1000:
-                    return Response(
-                        content=res.content, 
-                        media_type="image/gif",
-                        headers={
-                            "Cache-Control": "no-cache, no-store, must-revalidate",
-                            "Access-Control-Allow-Origin": "*"
-                        }
-                    )
-            except Exception as e:
-                print(f"Failed fetching {url}: {e}")
-
-    # Fallback to high-resolution live animated Bengaluru Doppler radar tile if IMD portal is undergoing maintenance
-    radar_fallback = "https://tilecache.rainviewer.com/v2/radar/nowcast_10/512/7/93/60/2/1_1.png"
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        try:
-            res = await client.get(radar_fallback)
-            return Response(content=res.content, media_type="image/png")
-        except Exception:
-            return Response(status_code=404)
+                h
