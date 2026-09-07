@@ -20,7 +20,8 @@ import {
   fetchWeatherTelemetry, 
   reverseGeocodeCoordinates, 
   sendAIChatQuery, 
-  fetchEnvironmentalTelemetry 
+  fetchEnvironmentalTelemetry,
+  fetchIPFallbackLocation 
 } from './services/api';
 
 export default function App() {
@@ -63,16 +64,17 @@ export default function App() {
     localStorage.setItem('atmos_lang', newLang);
   };
 
-  const syncTelemetryLocation = async (lat, lon) => {
+  const syncTelemetryLocation = async (lat, lon, knownCity = null) => {
     setIsLocating(true);
     try {
       const [weatherData, environmentalData] = await Promise.all([
-        fetchWeatherTelemetry(lat, lon),
+        fetchWeatherTelemetry(lat, lon, knownCity),
         fetchEnvironmentalTelemetry(lat, lon)
       ]);
       setWeather(weatherData);
       setEnvData(environmentalData);
 
+      // Perform high-resolution reverse geocoding if not already known
       reverseGeocodeCoordinates(lat, lon).then((cityName) => {
         if (cityName) {
           setWeather((prev) => (prev ? { ...prev, resolved_city: cityName } : prev));
@@ -87,8 +89,19 @@ export default function App() {
 
   const acquireAccuratePosition = () => {
     setIsLocating(true);
+
+    const fallbackToIP = async () => {
+      try {
+        const ipLoc = await fetchIPFallbackLocation();
+        setCoords({ lat: ipLoc.lat, lon: ipLoc.lon });
+        syncTelemetryLocation(ipLoc.lat, ipLoc.lon, ipLoc.city);
+      } catch {
+        syncTelemetryLocation(12.9716, 77.5946, "Bengaluru, Karnataka");
+      }
+    };
+
     if (!navigator.geolocation) {
-      syncTelemetryLocation(12.9716, 77.5946);
+      fallbackToIP();
       return;
     }
 
@@ -102,17 +115,27 @@ export default function App() {
         syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("GPS lock error, defaulting to station baseline:", err);
-        const fallback = { lat: 12.9716, lon: 77.5946 };
-        setCoords(fallback);
-        syncTelemetryLocation(fallback.lat, fallback.lon);
+        console.warn("Hardware GPS lock unavailable, using network triangulation:", err.message);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lowAcc = {
+              lat: parseFloat(pos.coords.latitude.toFixed(6)),
+              lon: parseFloat(pos.coords.longitude.toFixed(6)),
+            };
+            setCoords(lowAcc);
+            syncTelemetryLocation(lowAcc.lat, lowAcc.lon);
+          },
+          () => {
+            fallbackToIP();
+          },
+          { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
     );
   };
 
   useEffect(() => {
-    syncTelemetryLocation(12.9716, 77.5946);
     acquireAccuratePosition();
   }, []);
 
@@ -333,7 +356,7 @@ export default function App() {
               </div>
 
               {/* ENVIRONMENTAL & MICRO-CLIMATE INDICES */}
-              <EnvironmentalPanel envData={envData} />
+              <EnvironmentalPanel envData={envData} lang={lang} />
 
               {/* Diurnal Trend Projection */}
               <div className="bg-[#0d1322]/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl backdrop-blur-xl space-y-4">
@@ -467,7 +490,7 @@ export default function App() {
         {currentPage === 'agri' && <AgriAdvisoryView coords={coords} weather={weather} />}
 
         {/* WEATHER-SAFE ROUTE PLANNER */}
-        {currentPage === 'routes' && <RoutePlannerView coords={coords} weather={weather} />}
+        {currentPage === 'routes' && <RoutePlannerView coords={coords} weather={weather} lang={lang} />}
 
         {/* DISASTER EARLY WARNING */}
         {currentPage === 'disaster' && <DisasterView coords={coords} weather={weather} />}
