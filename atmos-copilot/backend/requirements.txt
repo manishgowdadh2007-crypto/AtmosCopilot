@@ -3,3 +3,8 @@ uvicorn
 httpx
 pydantic
 email-validator
+fastapi
+uvicorn
+httpx
+pydantic
+google-genai
