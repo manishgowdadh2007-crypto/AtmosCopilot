@@ -1,137 +1,334 @@
-import React, { useState, useEffect } from "react";
-import { CloudRain, Satellite, Wind, RefreshCw } from "lucide-react";
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Radio, 
+  Thermometer, 
+  Cloud, 
+  Gauge, 
+  Droplets, 
+  Wind, 
+  Play, 
+  Pause, 
+  RotateCcw, 
+  Layers, 
+  Eye, 
+  Maximize2 
+} from 'lucide-react';
 
-export default function SatelliteView({ coords, weather }) {
-  const [activeLayer, setActiveLayer] = useState("radar");
-  const [currentTimeStr, setCurrentTimeStr] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
+export default function SatelliteView({ coords, weather, theme = 'dark' }) {
+  // Active layer selection
+  const [activeLayer, setActiveLayer] = useState('radar'); // 'radar' | 'temp' | 'clouds' | 'pressure' | 'humidity' | 'wind'
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [timelineIndex, setTimelineIndex] = useState(3);
+  const [radarTimestamp, setRadarTimestamp] = useState('');
+  const [zoomLevel, setZoomLevel] = useState(7);
 
-  const lat = coords?.lat || 12.9716;
-  const lon = coords?.lon || 77.5946;
+  const centerLat = coords?.lat || 12.9716;
+  const centerLon = coords?.lon || 77.5946;
+
+  // OpenWeather / RainViewer dynamic tile endpoints
+  const layerEndpoints = {
+    radar: `https://tilecache.rainviewer.com/v2/radar/nowcast_10/512/{z}/{x}/{y}/2/1_1.png`,
+    temp: `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=9aaeda92fc69f24d5f44ea861270f054`,
+    clouds: `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=9aaeda92fc69f24d5f44ea861270f054`,
+    pressure: `https://tile.openweathermap.org/map/pressure_new/{z}/{x}/{y}.png?appid=9aaeda92fc69f24d5f44ea861270f054`,
+    humidity: `https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=9aaeda92fc69f24d5f44ea861270f054`,
+    wind: `https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid=9aaeda92fc69f24d5f44ea861270f054`
+  };
+
+  // Timeline intervals
+  const timelineSteps = ["-45m", "-30m", "-15m", "LIVE", "+15m", "+30m"];
 
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      setCurrentTimeStr(
-        now.toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: true,
-        })
-      );
+      setRadarTimestamp(now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }));
     };
     updateTime();
-    const timer = setInterval(updateTime, 1000);
-    return () => clearInterval(timer);
+    const interval = setInterval(updateTime, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  const getStreamUrl = () => {
-    // 1. Live Doppler Precipitation Radar (RainViewer)
-    if (activeLayer === "radar") {
-      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&oFa=0&oc=1&layer=radar&sm=1&sn=1`;
+  // Animation cycle
+  useEffect(() => {
+    let anim;
+    if (isPlaying) {
+      anim = setInterval(() => {
+        setTimelineIndex((prev) => (prev + 1) % timelineSteps.length);
+      }, 2200);
     }
-    // 2. Global Infrared Cloud Coverage (RainViewer Satellite - Frame-safe)
-    if (activeLayer === "satellite") {
-      return `https://www.rainviewer.com/map.html?loc=${lat},${lon},7&oFa=0&oc=1&layer=satellite&sm=1&sn=1`;
+    return () => clearInterval(anim);
+  }, [isPlaying]);
+
+  // Layer Legend Configurations
+  const getLegend = () => {
+    switch (activeLayer) {
+      case 'temp':
+        return {
+          title: "Surface Temperature Range (°C)",
+          gradient: "from-blue-600 via-emerald-400 via-amber-400 to-rose-600",
+          labels: ["< 10°C", "20°C", "30°C", "35°C", "> 42°C"]
+        };
+      case 'clouds':
+        return {
+          title: "Satellite Cloud Density (%)",
+          gradient: "from-transparent via-slate-400/50 to-white",
+          labels: ["Clear", "25%", "50%", "75%", "Overcast 100%"]
+        };
+      case 'pressure':
+        return {
+          title: "Mean Sea-Level Pressure (hPa)",
+          gradient: "from-purple-600 via-blue-500 via-cyan-400 to-emerald-400",
+          labels: ["990 hPa", "1000 hPa", "1008 hPa", "1016 hPa", "> 1024 hPa"]
+        };
+      case 'humidity':
+        return {
+          title: "Relative Atmospheric Moisture (%)",
+          gradient: "from-amber-200 via-teal-400 to-blue-700",
+          labels: ["Dry < 30%", "50%", "70%", "85%", "Saturated 100%"]
+        };
+      case 'wind':
+        return {
+          title: "Surface Wind Velocity (km/h)",
+          gradient: "from-cyan-300 via-amber-400 to-rose-600",
+          labels: ["Calm 0", "15 km/h", "30 km/h", "50 km/h", "> 75 km/h"]
+        };
+      default:
+        return {
+          title: "Doppler Reflectivity (dBZ)",
+          gradient: "from-blue-500 via-emerald-400 via-amber-400 to-rose-600",
+          labels: ["Light (15)", "Moderate (30)", "Heavy (45)", "Severe (60+)"]
+        };
     }
-    // 3. OpenStreetMap Wind Vector Surface Layer (Frame-safe)
-    return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=7&overlay=wind&product=ecmwf&level=surface&lat=${lat}&lon=${lon}`;
   };
 
+  const legend = getLegend();
+
   return (
-    <div 
-      className="relative w-full bg-[#05070e] overflow-hidden select-none font-sans"
-      style={{ height: "calc(100vh - 64px)", minHeight: "calc(100vh - 64px)" }}
-    >
-      {/* Interactive Telemetry Stream */}
+    <div className="relative w-full h-full overflow-hidden select-none bg-[#030712] font-sans">
+      
+      {/* 1. Base Map Tile Canvas */}
       <iframe
-        key={`${activeLayer}-${reloadKey}`}
-        title="Atmospheric Telemetry Surface"
-        src={getStreamUrl()}
-        className="w-full h-full border-0 filter contrast-105 saturate-115"
-        style={{ width: "100%", height: "100%", display: "block" }}
-        allow="geolocation; fullscreen"
-        loading="eager"
+        title="Atmospheric Observational Surface"
+        src={`https://www.openstreetmap.org/export/embed.html?bbox=${centerLon - 2.8}%2C${centerLat - 2.2}%2C${centerLon + 2.8}%2C${centerLat + 2.2}&layer=mapnik&marker=${centerLat}%2C${centerLon}`}
+        className="absolute inset-0 w-full h-full border-0 pointer-events-auto filter invert hue-rotate-180 brightness-75 contrast-125"
       />
 
-      {/* Observation Surface Selector HUD */}
-      <div className="absolute top-4 left-4 z-30 flex flex-col gap-2 bg-[#0c101c]/95 backdrop-blur-xl border border-slate-700/80 p-3 rounded-2xl shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-200">
+      {/* 2. Meteorological Tile Overlay */}
+      <div 
+        className="absolute inset-0 pointer-events-none transition-opacity duration-700"
+        style={{
+          backgroundImage: `radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.12), transparent 70%)`
+        }}
+      >
+        {/* Dynamic Weather Simulation Mesh matching the active filter */}
+        {activeLayer === 'temp' && (
+          <div className="absolute inset-0 bg-gradient-to-tr from-blue-900/30 via-amber-500/25 to-rose-600/30 mix-blend-color animate-pulse" />
+        )}
+        {activeLayer === 'clouds' && (
+          <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-slate-300/30 to-white/10 mix-blend-screen opacity-70" />
+        )}
+        {activeLayer === 'pressure' && (
+          <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px] opacity-25" />
+        )}
+        {activeLayer === 'humidity' && (
+          <div className="absolute inset-0 bg-cyan-900/30 mix-blend-overlay" />
+        )}
+      </div>
+
+      {/* 3. Station Position Lock Marker */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none flex flex-col items-center">
+        <div className="relative flex items-center justify-center">
+          <span className="absolute w-8 h-8 rounded-full bg-amber-400/30 animate-ping" />
+          <span className="relative w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-slate-950 shadow-lg shadow-amber-400/50" />
+        </div>
+        <span className="mt-1 px-2.5 py-0.5 rounded-full bg-slate-950/80 border border-amber-400/40 text-[10px] font-mono text-amber-300 backdrop-blur-md whitespace-nowrap shadow-md">
+          {weather?.resolved_city || "Station Coordinates Lock"}
+        </span>
+      </div>
+
+      {/* 4. Left Control Panel: Atmospheric Surface Filters */}
+      <div className="absolute top-5 left-5 z-20 w-64 flex flex-col gap-2">
+        <div className="bg-[#0b101e]/90 border border-slate-700/80 rounded-2xl p-3 backdrop-blur-xl shadow-2xl">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1.5">
+              <Layers className="w-3 h-3" />
               Observation Surface
             </span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           </div>
-          <button
-            onClick={() => setReloadKey((prev) => prev + 1)}
-            title="Reload Frame"
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-          >
-            <RefreshCw className="w-3 h-3" />
-          </button>
-        </div>
 
-        <div className="flex flex-col gap-1.5 pt-1">
-          <button
-            onClick={() => setActiveLayer("radar")}
-            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-              activeLayer === "radar"
-                ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25 font-bold"
-                : "text-slate-300 hover:bg-slate-800/80"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <CloudRain className="w-3.5 h-3.5" />
-              <span>Live Doppler Radar</span>
-            </div>
-            <span className="text-[10px] font-mono ml-3 px-1.5 py-0.5 rounded bg-black/30">HD</span>
-          </button>
+          <div className="space-y-1">
+            {/* Doppler Radar */}
+            <button
+              onClick={() => setActiveLayer('radar')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'radar'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Radio className="w-3.5 h-3.5" />
+                <span>Live Doppler Radar</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">RAD</span>
+            </button>
 
-          <button
-            onClick={() => setActiveLayer("satellite")}
-            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-              activeLayer === "satellite"
-                ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25 font-bold"
-                : "text-slate-300 hover:bg-slate-800/80"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Satellite className="w-3.5 h-3.5" />
-              <span>INSAT / Cloud Infrared</span>
-            </div>
-            <span className="text-[10px] font-mono ml-3 px-1.5 py-0.5 rounded bg-black/30">IR</span>
-          </button>
+            {/* Temperature View */}
+            <button
+              onClick={() => setActiveLayer('temp')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'temp'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Thermometer className="w-3.5 h-3.5" />
+                <span>Temperature View</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">TMP</span>
+            </button>
 
-          <button
-            onClick={() => setActiveLayer("wind")}
-            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-              activeLayer === "wind"
-                ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25 font-bold"
-                : "text-slate-300 hover:bg-slate-800/80"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Wind className="w-3.5 h-3.5" />
-              <span>Wind Stream Vectors</span>
-            </div>
-            <span className="text-[10px] font-mono ml-3 px-1.5 py-0.5 rounded bg-black/30">SFC</span>
-          </button>
+            {/* Cloud View */}
+            <button
+              onClick={() => setActiveLayer('clouds')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'clouds'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Cloud className="w-3.5 h-3.5" />
+                <span>Cloud Coverage View</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">SAT</span>
+            </button>
+
+            {/* Pressure View */}
+            <button
+              onClick={() => setActiveLayer('pressure')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'pressure'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Gauge className="w-3.5 h-3.5" />
+                <span>Pressure Dynamics (Isobars)</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">HPA</span>
+            </button>
+
+            {/* Humidity View */}
+            <button
+              onClick={() => setActiveLayer('humidity')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'humidity'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Droplets className="w-3.5 h-3.5" />
+                <span>Relative Humidity View</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">RH</span>
+            </button>
+
+            {/* Wind Vector View */}
+            <button
+              onClick={() => setActiveLayer('wind')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
+                activeLayer === 'wind'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Wind className="w-3.5 h-3.5" />
+                <span>Wind Stream Vectors</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase opacity-75">SFC</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Station Ephemeris Footer Bar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-[#0c101c]/95 backdrop-blur-xl border border-slate-700/80 px-4 py-2 rounded-2xl shadow-2xl text-xs text-slate-200 whitespace-nowrap">
-        <span className="font-mono text-amber-300 font-semibold">{currentTimeStr}</span>
-        <div className="h-4 w-px bg-slate-700" />
-        <span className="font-mono text-[11px] text-slate-400">
-          🌅 {weather?.current?.sunrise || "06:09"} | 🌇 {weather?.current?.sunset || "18:28"} IST
-        </span>
-        <div className="h-4 w-px bg-slate-700 hidden sm:block" />
-        <span className="font-mono text-[11px] text-emerald-400 hidden sm:inline">
-          Station: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Bengaluru"}
-        </span>
+      {/* 5. Right Map Tools: Zoom & Eye */}
+      <div className="absolute top-5 right-5 z-20 flex flex-col gap-2">
+        <button
+          onClick={() => setZoomLevel((prev) => Math.min(prev + 1, 14))}
+          className="w-9 h-9 rounded-xl bg-[#0b101e]/90 border border-slate-700/80 text-white flex items-center justify-center hover:bg-slate-800 transition shadow-xl"
+        >
+          +
+        </button>
+        <button
+          onClick={() => setZoomLevel((prev) => Math.max(prev - 1, 4))}
+          className="w-9 h-9 rounded-xl bg-[#0b101e]/90 border border-slate-700/80 text-white flex items-center justify-center hover:bg-slate-800 transition shadow-xl"
+        >
+          -
+        </button>
+      </div>
+
+      {/* 6. Dynamic Color Scale Legend */}
+      <div className="absolute bottom-16 left-5 z-20 hidden sm:flex flex-col bg-[#0b101e]/85 border border-slate-800 px-3.5 py-2.5 rounded-2xl backdrop-blur-xl shadow-xl max-w-sm">
+        <span className="text-[10px] font-mono text-slate-400 mb-1.5">{legend.title}</span>
+        <div className={`h-2 w-64 rounded-full bg-gradient-to-r ${legend.gradient} mb-1`} />
+        <div className="flex justify-between text-[9px] font-mono text-slate-400">
+          {legend.labels.map((lbl, idx) => (
+            <span key={idx}>{lbl}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* 7. Bottom Observation Controls & Animation Timeline Bar */}
+      <div className="absolute bottom-5 inset-x-5 z-20 flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#0b101e]/90 border border-slate-700/80 px-4 py-2.5 rounded-2xl backdrop-blur-xl shadow-2xl">
+        {/* Play / Pause / Reset */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold hover:bg-amber-400 transition"
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+          </button>
+          <button
+            onClick={() => { setTimelineIndex(3); setIsPlaying(false); }}
+            className="p-2 rounded-xl bg-slate-800/80 text-slate-300 hover:text-white transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+          <div className="flex items-center gap-1.5 ml-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">LIVE</span>
+            <span className="text-xs font-mono text-amber-400 ml-1">{radarTimestamp}</span>
+          </div>
+        </div>
+
+        {/* Chronological Steps */}
+        <div className="flex items-center gap-1.5 bg-[#060913] p-1 rounded-xl border border-slate-800">
+          {timelineSteps.map((step, idx) => (
+            <button
+              key={idx}
+              onClick={() => { setTimelineIndex(idx); setIsPlaying(false); }}
+              className={`px-2.5 py-1 text-[11px] font-mono rounded-lg transition ${
+                timelineIndex === idx
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {step}
+            </button>
+          ))}
+        </div>
+
+        {/* Telemetry Footer Meta */}
+        <div className="hidden lg:flex items-center gap-4 text-[10px] font-mono text-slate-400">
+          <span>Active Layer: <strong className="text-amber-400 uppercase">{activeLayer}</strong></span>
+          <span>Lock: <strong className="text-white">{coords?.lat?.toFixed(4) || "12.9716"}°N, {coords?.lon?.toFixed(4) || "77.5946"}°E</strong></span>
+        </div>
       </div>
     </div>
   );
