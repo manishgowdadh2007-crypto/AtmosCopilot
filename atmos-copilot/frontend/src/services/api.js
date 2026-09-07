@@ -106,6 +106,7 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
   }
 };
 
+// 3. User Authentication Protocols
 export const registerUser = async (userData) => {
   try {
     const res = await fetch(`${BASE_URL}/register`, {
@@ -113,13 +114,34 @@ export const registerUser = async (userData) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData),
     });
-    return res.json();
-  } catch {
-    return { status: 'offline_cached' };
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || "Registration failed");
+    }
+    return data;
+  } catch (err) {
+    throw err;
   }
 };
 
-// 3. High-precision GPS meteorological fetcher (Guaranteed Data Return)
+export const loginUser = async (credentials) => {
+  try {
+    const res = await fetch(`${BASE_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || "Login failed");
+    }
+    return data;
+  } catch (err) {
+    throw err;
+  }
+};
+
+// 4. High-precision GPS meteorological fetcher (Guaranteed Data Return)
 export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const endpoint = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto`;
@@ -234,7 +256,7 @@ const generateFallbackDaily = () => {
   }));
 };
 
-// 4. Environmental & Agro-Meteorological Telemetry (AQI, UV Index, Soil Dynamics)
+// 5. Environmental & Agro-Meteorological Telemetry (AQI, UV Index, Soil Dynamics)
 export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   const aqiEndpoint = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5,european_aqi,uv_index`;
   const agroEndpoint = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=soil_moisture_0_to_1cm,vapour_pressure_deficit`;
@@ -296,7 +318,7 @@ export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   }
 };
 
-// 5. Resilient hybrid AI Chat query (Cloud API + Local Telemetry Fallback)
+// 6. Resilient hybrid AI Chat query (Cloud API + Local Telemetry Fallback)
 export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 3500);
