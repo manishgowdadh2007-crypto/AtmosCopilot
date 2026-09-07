@@ -9,11 +9,42 @@ const mapWmoCode = (code) => {
   return "Partly Cloudy";
 };
 
-// 1. Client-side reverse geocoding with instant safety fallback
+// 1. IP-Based Triangulation Fallback (Works globally if browser GPS is denied)
+export const fetchIPFallbackLocation = async () => {
+  try {
+    const res = await fetch('https://ipapi.co/json/');
+    if (!res.ok) throw new Error("IP Geolocation unreachable");
+    const data = await res.json();
+    return {
+      lat: parseFloat(data.latitude),
+      lon: parseFloat(data.longitude),
+      city: `${data.city || data.region}, ${data.country_name}`
+    };
+  } catch (err) {
+    console.warn("Primary IP Geolocation failed, trying secondary:", err);
+    try {
+      const res2 = await fetch('https://ipwho.is/');
+      const data2 = await res2.json();
+      if (data2.success) {
+        return {
+          lat: parseFloat(data2.latitude),
+          lon: parseFloat(data2.longitude),
+          city: `${data2.city || data2.region}, ${data2.country}`
+        };
+      }
+    } catch {
+      // Nominal baseline only if completely offline
+      return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
+    }
+  }
+  return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
+};
+
+// 2. Multi-tier Global Reverse Geocoding
 export const reverseGeocodeCoordinates = async (lat, lon) => {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5s max
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=18&addressdetails=1`,
@@ -29,23 +60,36 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
     const addr = data.address || {};
 
     const locality =
-      addr.neighbourhood ||
       addr.suburb ||
+      addr.neighbourhood ||
       addr.residential ||
-      addr.quarter ||
-      addr.road ||
-      addr.city_district ||
       addr.village ||
-      addr.city ||
-      'Bengaluru';
+      addr.town ||
+      addr.city_district ||
+      addr.road ||
+      "";
 
-    const city = addr.city || addr.state_district || 'Bengaluru';
-    return locality.toLowerCase() !== city.toLowerCase()
-      ? `${locality}, ${city}`
-      : city;
+    const majorArea =
+      addr.city ||
+      addr.town ||
+      addr.municipality ||
+      addr.county ||
+      addr.state_district ||
+      addr.state ||
+      "";
+
+    const country = addr.country || "";
+
+    if (locality && majorArea && locality.toLowerCase() !== majorArea.toLowerCase()) {
+      return `${locality}, ${majorArea}`;
+    }
+    if (majorArea) {
+      return country ? `${majorArea}, ${country}` : majorArea;
+    }
+    return data.display_name ? data.display_name.split(',').slice(0, 2).join(',').trim() : `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`;
   } catch (err) {
-    console.warn('Geocoding fallback:', err);
-    return 'Bengaluru, Karnataka';
+    console.warn('Reverse geocoding error:', err);
+    return null;
   }
 };
 
@@ -62,7 +106,7 @@ export const registerUser = async (userData) => {
   }
 };
 
-// 2. High-precision GPS meteorological fetcher (Guaranteed Data Return)
+// 3. High-precision GPS meteorological fetcher (Guaranteed Data Return)
 export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const endpoint = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto`;
@@ -115,7 +159,7 @@ export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
     return {
       latitude: lat,
       longitude: lon,
-      resolved_city: customName || "Bengaluru, Karnataka",
+      resolved_city: customName || "Current Location",
       current: {
         temp,
         condition: mapWmoCode(current.weather_code ?? 1),
@@ -139,7 +183,7 @@ export const fetchWeatherTelemetry = async (lat, lon, customName = null) => {
     return {
       latitude: lat,
       longitude: lon,
-      resolved_city: customName || "Bengaluru, Karnataka",
+      resolved_city: customName || "Current Location",
       current: {
         temp: 28,
         condition: "Partly Cloudy",
@@ -177,7 +221,7 @@ const generateFallbackDaily = () => {
   }));
 };
 
-// 3. Environmental & Agro-Meteorological Telemetry (AQI, UV Index, Soil Dynamics)
+// 4. Environmental & Agro-Meteorological Telemetry (AQI, UV Index, Soil Dynamics)
 export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   const aqiEndpoint = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5,european_aqi,uv_index`;
   const agroEndpoint = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=soil_moisture_0_to_1cm,vapour_pressure_deficit`;
@@ -239,7 +283,7 @@ export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   }
 };
 
-// 4. Resilient hybrid AI Chat query (Cloud API + Local Telemetry Fallback)
+// 5. Resilient hybrid AI Chat query (Cloud API + Local Telemetry Fallback)
 export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 3500);
