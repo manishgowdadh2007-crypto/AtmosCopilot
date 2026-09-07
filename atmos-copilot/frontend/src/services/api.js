@@ -40,11 +40,11 @@ export const fetchIPFallbackLocation = async () => {
   return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
 };
 
-// 2. Multi-tier Global Reverse Geocoding
+// 2. Multi-tier Global Reverse Geocoding with Industrial/Neighborhood Priority
 export const reverseGeocodeCoordinates = async (lat, lon) => {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
 
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=18&addressdetails=1`,
@@ -59,34 +59,47 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
     const data = await res.json();
     const addr = data.address || {};
 
-    const locality =
+    // 1. Check specific micro-locality (industrial zones, quarters, and road sectors)
+    const microLocality =
+      addr.industrial ||
+      addr.commercial ||
+      addr.residential ||
+      addr.quarter ||
       addr.suburb ||
       addr.neighbourhood ||
-      addr.residential ||
-      addr.village ||
-      addr.town ||
-      addr.city_district ||
       addr.road ||
+      addr.city_district ||
       "";
 
+    // 2. Check major administrative area
     const majorArea =
       addr.city ||
       addr.town ||
       addr.municipality ||
-      addr.county ||
       addr.state_district ||
       addr.state ||
       "";
 
-    const country = addr.country || "";
+    // If Nominatim labeled an industrial node nearby, use it directly
+    if (data.name && !data.name.match(/^[0-9]+$/)) {
+      if (majorArea && !data.name.toLowerCase().includes(majorArea.toLowerCase())) {
+        return `${data.name}, ${majorArea}`;
+      }
+      return data.name;
+    }
 
-    if (locality && majorArea && locality.toLowerCase() !== majorArea.toLowerCase()) {
-      return `${locality}, ${majorArea}`;
+    if (microLocality && majorArea) {
+      if (microLocality.toLowerCase() !== majorArea.toLowerCase()) {
+        return `${microLocality}, ${majorArea}`;
+      }
+      return majorArea;
     }
-    if (majorArea) {
-      return country ? `${majorArea}, ${country}` : majorArea;
-    }
-    return data.display_name ? data.display_name.split(',').slice(0, 2).join(',').trim() : `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`;
+
+    if (majorArea) return majorArea;
+
+    return data.display_name
+      ? data.display_name.split(',').slice(0, 2).join(',').trim()
+      : `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
   } catch (err) {
     console.warn('Reverse geocoding error:', err);
     return null;
