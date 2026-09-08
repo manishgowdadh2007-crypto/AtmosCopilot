@@ -39,12 +39,12 @@ export default function App() {
   const [user, setUser] = useState(savedUser);
   const [stage, setStage] = useState('app');
   const [currentPage, setCurrentPage] = useState('home');
-  const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
+  const [coords, setCoords] = useState(null);
 
   const [weather, setWeather] = useState({
-    resolved_city: "Bengaluru, Karnataka",
-    latitude: 12.9716,
-    longitude: 77.5946,
+    resolved_city: "Locating...",
+    latitude: 0,
+    longitude: 0,
     current: { temp: 26, condition: "Partly Cloudy", precipitation: 0, humidity: 55, wind: 12, dew_point: 16 },
     hourly: [
       { time: "6 pm", temp: 26, precip: 0, wind: 12 },
@@ -121,13 +121,11 @@ export default function App() {
 
   const syncTelemetryLocation = async (lat, lon, knownCity = null) => {
     try {
-      // 1. Resolve human-readable place name using Google Maps Geocoding
       let resolvedPlace = knownCity;
       if (!resolvedPlace || resolvedPlace.includes("°N") || resolvedPlace.includes("°E")) {
         resolvedPlace = await reverseGeocodeCoordinates(lat, lon);
       }
 
-      // 2. Fetch meteorological telemetry
       const [weatherData, environmentalData] = await Promise.all([
         fetchWeatherTelemetry(lat, lon, resolvedPlace),
         fetchEnvironmentalTelemetry(lat, lon)
@@ -136,7 +134,7 @@ export default function App() {
       if (weatherData) {
         setWeather({
           ...weatherData,
-          resolved_city: resolvedPlace || weatherData.resolved_city || "Bengaluru, Karnataka"
+          resolved_city: resolvedPlace || weatherData.resolved_city
         });
       }
       if (environmentalData) {
@@ -153,22 +151,26 @@ export default function App() {
     if (isLocating) return;
     setIsLocating(true);
 
-    const fallbackToDefault = async () => {
+    const fallbackToVisitorIP = async () => {
       try {
         const ipLoc = await fetchIPFallbackLocation();
-        if (ipLoc && ipLoc.lat) {
-          setCoords({ lat: ipLoc.lat, lon: ipLoc.lon });
-          syncTelemetryLocation(ipLoc.lat, ipLoc.lon, ipLoc.city);
+        if (ipLoc && ipLoc.lat && ipLoc.lon) {
+          const userCoords = {
+            lat: parseFloat(ipLoc.lat.toFixed(4)),
+            lon: parseFloat(ipLoc.lon.toFixed(4))
+          };
+          setCoords(userCoords);
+          syncTelemetryLocation(userCoords.lat, userCoords.lon, ipLoc.city);
           return;
         }
       } catch (err) {
-        console.warn("IP Fallback failed", err);
+        console.warn("Visitor IP Geolocation lookup failed:", err);
       }
-      syncTelemetryLocation(12.9716, 77.5946, "Bengaluru, Karnataka");
+      setIsLocating(false);
     };
 
     if (!navigator.geolocation) {
-      fallbackToDefault();
+      fallbackToVisitorIP();
       return;
     }
 
@@ -182,10 +184,10 @@ export default function App() {
         syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("GPS unavailable, fallback used:", err.message);
-        fallbackToDefault();
+        console.warn("Hardware GPS lock unavailable, using IP network resolution:", err.message);
+        fallbackToVisitorIP();
       },
-      { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
     );
   };
 
@@ -194,14 +196,17 @@ export default function App() {
   }, []);
 
   const handleAuthorized = (retrievedCoords, userData) => {
-    const finalCoords = retrievedCoords || { lat: 12.9716, lon: 77.5946 };
-    setCoords(finalCoords);
     if (userData) {
       setUser(userData);
       localStorage.setItem('atmos_user', JSON.stringify(userData));
     }
     setStage('app');
-    syncTelemetryLocation(finalCoords.lat, finalCoords.lon);
+    if (retrievedCoords) {
+      setCoords(retrievedCoords);
+      syncTelemetryLocation(retrievedCoords.lat, retrievedCoords.lon);
+    } else {
+      acquireAccuratePosition();
+    }
   };
 
   const handleLogout = () => {
@@ -259,7 +264,7 @@ export default function App() {
     dew_point: weather?.current?.dew_point ?? 16
   };
 
-  const city = weather?.resolved_city || (isLocating ? t.acquiring : "Bengaluru, Karnataka");
+  const city = weather?.resolved_city || (isLocating ? t.acquiring : "Current Location");
 
   const getSelectedDayHourly = () => {
     const rawHourly = weather?.hourly || [];
