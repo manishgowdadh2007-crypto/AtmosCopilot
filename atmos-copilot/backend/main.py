@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.1")
+app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -221,9 +221,10 @@ async def copilot_intelligence(req: QueryRequest):
 
     if groq_api_key:
         models_to_try = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama3-8b-8192"
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.6-27b",
+            "groq/compound-mini"
         ]
 
         system_instruction = (
