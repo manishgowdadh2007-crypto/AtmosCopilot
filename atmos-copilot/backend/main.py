@@ -322,8 +322,8 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
     }
 
 # 7. Sun Copilot Powered by Groq Llama 3.3 70B
-@app.post("/api/ai-query")
 @app.post("/api/copilot")
+@app.post("/api/ai-query")
 async def copilot_intelligence(req: QueryRequest):
     queried_place = extract_place_from_prompt(req.query)
 
@@ -343,7 +343,7 @@ async def copilot_intelligence(req: QueryRequest):
 
     if not groq_client:
         return {
-            "reply": f"Live reading for {target_name}: {cur['condition']} at {cur['temp']}°C (High: {cur['max_temp']}°C / Low: {cur['min_temp']}°C), {cur['humidity']}% humidity, and {cur['wind']} km/h wind.",
+            "reply": f"Live reading for {target_name}: {cur['condition']} at {cur['temp']}°C, {cur['humidity']}% humidity, and {cur['wind']} km/h wind.",
             "telemetry": telemetry,
             "engine": "live_grid_telemetry"
         }
@@ -354,7 +354,7 @@ async def copilot_intelligence(req: QueryRequest):
         "Rules:\n"
         "1. Never give robotic boilerplate openings (avoid 'Sure!', 'Certainly', 'Here is the weather'). Dive straight into the answer.\n"
         "2. Ground every response in the provided live telemetry (temperature, condition, humidity, wind, and rain probability).\n"
-        "3. Provide practical, contextual insights (umbrella necessity, transit advice, comfort/heat index) with light wit.\n"
+        "3. Provide practical, contextual insights (umbrella necessity, transit advice, heat index) with light wit.\n"
         "4. Keep answers concise, natural, and under 120 words."
     )
 
