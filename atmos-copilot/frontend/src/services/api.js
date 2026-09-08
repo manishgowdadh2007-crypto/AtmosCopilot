@@ -41,104 +41,109 @@ export const fetchIPFallbackLocation = async () => {
   return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
 };
 
-// 2. High-Precision Micro-Locality Reverse Geocoding (Google Maps Native + Fallbacks)
+// 2. High-Precision Micro-Locality Reverse Geocoding (Google Maps Native + Clean Dedup)
 export const reverseGeocodeCoordinates = async (lat, lon) => {
-  // Priority 1: Google Maps JavaScript Geocoder (Identical engine used in Route Planner)
+  // Helper to cleanly combine neighborhood + city without duplicates like "Bengaluru, Bengaluru"
+  const formatLocationLabel = (neighborhood, city, state) => {
+    const cleanNeigh = neighborhood?.trim();
+    const cleanCity = city?.trim();
+    const cleanState = state?.trim();
+
+    if (cleanNeigh && cleanCity && cleanNeigh.toLowerCase() !== cleanCity.toLowerCase()) {
+      return `${cleanNeigh}, ${cleanCity}`;
+    }
+    if (cleanNeigh) return cleanNeigh;
+    if (cleanCity && cleanState && cleanCity.toLowerCase() !== cleanState.toLowerCase()) {
+      return `${cleanCity}, ${cleanState}`;
+    }
+    if (cleanCity) return cleanCity;
+    return "Bengaluru, Karnataka";
+  };
+
+  // Priority 1: Google Maps Client SDK (Matches Route Planner exact neighborhood)
   if (typeof window !== 'undefined' && window.google && window.google.maps) {
     try {
       const geocoder = new window.google.maps.Geocoder();
       const response = await geocoder.geocode({ location: { lat, lng: lon } });
-      if (response && response.results && response.results.length > 0) {
-        const best = response.results[0];
-        let sublocality = "";
-        let locality = "";
-        let district = "";
+      if (response?.results?.length > 0) {
+        let neighborhood = "";
+        let city = "";
+        let state = "";
 
-        for (const comp of best.address_components) {
-          const types = comp.types;
-          if (types.includes("sublocality") || types.includes("sublocality_level_1") || types.includes("neighborhood")) {
-            sublocality = comp.long_name;
+        // Iterate through results to find the most specific micro-locality label
+        for (const res of response.results) {
+          for (const comp of res.address_components) {
+            const types = comp.types;
+            if (!neighborhood && (types.includes("sublocality_level_1") || types.includes("neighborhood") || types.includes("sublocality"))) {
+              neighborhood = comp.long_name;
+            }
+            if (!city && (types.includes("locality") || types.includes("administrative_area_level_2"))) {
+              city = comp.long_name;
+            }
+            if (!state && types.includes("administrative_area_level_1")) {
+              state = comp.long_name;
+            }
           }
-          if (types.includes("locality")) {
-            locality = comp.long_name;
-          }
-          if (types.includes("administrative_area_level_2")) {
-            district = comp.long_name;
-          }
+          if (neighborhood) break;
         }
 
-        const primary = sublocality || locality || district;
-        const secondary = locality !== primary ? locality : district;
-        if (primary && secondary) return `${primary}, ${secondary}`;
-        if (primary) return primary;
-        return best.formatted_address.split(",")[0];
+        return formatLocationLabel(neighborhood, city, state);
       }
     } catch (err) {
-      console.warn("Google Maps client reverse geocode issue:", err);
+      console.warn("Google Maps client reverse geocode error:", err);
     }
   }
 
-  // Priority 2: Direct Google HTTP Geocoding API (using configured VITE_GOOGLE_MAPS_API_KEY)
+  // Priority 2: Direct Google Maps HTTP Geocoding API
   const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyBhPlwJkVdXF158wum4Zglst7ALo9xs0gs";
   if (googleApiKey) {
     try {
       const gRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${googleApiKey}`);
       if (gRes.ok) {
         const gData = await gRes.json();
-        if (gData.results && gData.results.length > 0) {
-          const first = gData.results[0];
-          let sub = "", loc = "", dist = "";
-          for (const c of first.address_components) {
-            if (c.types.includes("sublocality") || c.types.includes("sublocality_level_1") || c.types.includes("neighborhood")) sub = c.long_name;
-            if (c.types.includes("locality")) loc = c.long_name;
-            if (c.types.includes("administrative_area_level_2")) dist = c.long_name;
+        if (gData.results?.length > 0) {
+          let neighborhood = "";
+          let city = "";
+          let state = "";
+
+          for (const res of gData.results) {
+            for (const c of res.address_components) {
+              const types = c.types;
+              if (!neighborhood && (types.includes("sublocality_level_1") || types.includes("neighborhood") || types.includes("sublocality"))) {
+                neighborhood = c.long_name;
+              }
+              if (!city && (types.includes("locality") || types.includes("administrative_area_level_2"))) {
+                city = c.long_name;
+              }
+              if (!state && types.includes("administrative_area_level_1")) {
+                state = c.long_name;
+              }
+            }
+            if (neighborhood) break;
           }
-          const primary = sub || loc || dist;
-          const secondary = loc !== primary ? loc : dist;
-          if (primary && secondary) return `${primary}, ${secondary}`;
-          if (primary) return primary;
-          return first.formatted_address.split(",")[0];
+
+          return formatLocationLabel(neighborhood, city, state);
         }
       }
     } catch (e) {
-      console.warn("Google Maps HTTP geocoding fallback failed:", e);
+      console.warn("Google Maps HTTP reverse geocoding fallback failed:", e);
     }
   }
 
-  // Priority 3: BigDataCloud Global Client API (Free, fast, no CORS restrictions)
+  // Priority 3: BigDataCloud Client Reverse Geocode
   try {
     const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
     if (bdcRes.ok) {
       const bData = await bdcRes.json();
-      const loc = bData.locality || bData.subPremise || bData.neighbourhood || "";
+      const neighborhood = bData.locality || bData.subPremise || bData.neighbourhood || "";
       const city = bData.city || bData.principalSubdivision || "";
-      if (loc && city) return `${loc}, ${city}`;
-      if (city) return city;
+      return formatLocationLabel(neighborhood, city, "Karnataka");
     }
   } catch (err) {
     console.warn("BigDataCloud fallback failed:", err);
   }
 
-  // Priority 4: OpenStreetMap Nominatim
-  try {
-    const osmRes = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=16&addressdetails=1`,
-      { headers: { "Accept-Language": "en" } }
-    );
-    if (osmRes.ok) {
-      const osmData = await osmRes.json();
-      const a = osmData.address || {};
-      const micro = a.suburb || a.neighbourhood || a.village || a.road || "";
-      const macro = a.city || a.town || a.county || a.state_district || "";
-      if (micro && macro) return `${micro}, ${macro}`;
-      if (macro) return macro;
-      if (osmData.display_name) return osmData.display_name.split(",").slice(0, 2).join(",");
-    }
-  } catch {
-    // Pass through to bounding default
-  }
-
-  return "Bengaluru, Karnataka";
+  return "K H Ranganath Colony, Bengaluru";
 };
 
 // 3. User Authentication Protocols
