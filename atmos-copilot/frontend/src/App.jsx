@@ -4,8 +4,6 @@ import {
   Settings, LogOut, User, Mail, Phone, Clock, ShieldCheck, CheckCircle2,
   Sun, Moon
 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import MotionCard from './components/common/MotionCard';
 
 import SatelliteView from './components/home/SatelliteView';
 import EnvironmentalPanel from './components/home/EnvironmentalPanel';
@@ -43,7 +41,6 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
 
-  // Baseline telemetry ensures instant zero-latency render with no black-screen unmounts
   const [weather, setWeather] = useState({
     resolved_city: "Bengaluru, Karnataka",
     latitude: 12.9716,
@@ -79,8 +76,6 @@ export default function App() {
   const [lang, setLang] = useState(() => localStorage.getItem('atmos_lang') || 'en');
   const [theme, setTheme] = useState(() => localStorage.getItem('atmos_theme') || 'dark');
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
-
-  // Live second/minute time counter
   const [currentTime, setCurrentTime] = useState('');
 
   useEffect(() => {
@@ -139,13 +134,12 @@ export default function App() {
         }
       });
     } catch (err) {
-      console.error("Telemetry synchronization fallback triggered:", err);
+      console.error("Telemetry sync error:", err);
     } finally {
       setIsLocating(false);
     }
   };
 
-  // Guarded against rapid timeout loops and Open-Meteo 429 exhaustion
   const acquireAccuratePosition = () => {
     if (isLocating) return;
     setIsLocating(true);
@@ -159,7 +153,7 @@ export default function App() {
           return;
         }
       } catch (err) {
-        console.warn("IP Fallback failed, defaulting to Bengaluru station grid", err);
+        console.warn("IP Fallback failed", err);
       }
       syncTelemetryLocation(12.9716, 77.5946, "Bengaluru, Karnataka");
     };
@@ -179,7 +173,7 @@ export default function App() {
         syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("GPS lock unavailable, using fallback grid:", err.message);
+        console.warn("GPS unavailable, fallback used:", err.message);
         fallbackToDefault();
       },
       { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
@@ -315,7 +309,6 @@ export default function App() {
     return "☀️";
   };
 
-  // Safe vector generation guarded against null or empty projection arrays
   const calculateRealCurve = (dataList, metric) => {
     if (!dataList || dataList.length < 2) {
       return { path: "M 0,70 L 800,70", area: "M 0,70 L 800,70 L 800,140 L 0,140 Z", coords: [], values: [] };
@@ -371,7 +364,7 @@ export default function App() {
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden font-sans select-none">
       
-      {/* 1. Video Background */}
+      {/* 1. Global Constant Video Background */}
       <video
         autoPlay
         loop
@@ -387,7 +380,7 @@ export default function App() {
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
 
-      {/* 2. Atmosphere Tint */}
+      {/* 2. Glassmorphic Atmosphere Tint */}
       <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
         theme === 'dark'
           ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/35 to-[#050811]/80'
@@ -409,15 +402,15 @@ export default function App() {
         />
       </div>
 
-      {/* 4. Main Viewport Router */}
+      {/* 4. Main Viewport */}
       <main className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-7xl mx-auto space-y-6">
               
-              {/* Station Banner & Met Matrix with 3D MotionCard Wrappers */}
+              {/* Station Banner & Met Matrix */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <MotionCard className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
+                <div className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
@@ -458,45 +451,45 @@ export default function App() {
                       <div className={`text-xs ${subText}`}>{t.precipitation}: {formatNativeNumber(cur.precipitation, lang)}%</div>
                     </div>
                   </div>
-                </MotionCard>
+                </div>
 
-                {/* 4 Corner Met Station Cards */}
+                {/* 4 Corner Met Cards */}
                 <div className="grid grid-cols-2 gap-4">
-                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.windVelocity}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.wind, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>km/h</span>
                     </div>
                     <span className="text-[11px] text-emerald-500 font-medium">{t.surfaceVector}</span>
-                  </MotionCard>
+                  </div>
 
-                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.relativeHumidity}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.humidity, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>%</span>
                     </div>
                     <span className="text-[11px] text-cyan-500 font-medium">{t.atmosphericMoisture}</span>
-                  </MotionCard>
+                  </div>
 
-                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.precipitation}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.precipitation, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>%</span>
                     </div>
                     <span className="text-[11px] text-indigo-500 font-medium">{t.modelProbability}</span>
-                  </MotionCard>
+                  </div>
 
-                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.dewPoint}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.dew_point, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>°C</span>
                     </div>
                     <span className="text-[11px] text-amber-500 font-medium">{t.baseline}</span>
-                  </MotionCard>
+                  </div>
                 </div>
               </div>
 
@@ -733,7 +726,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Theme Selector */}
+                {/* Display Theme Selector */}
                 <div className={`p-4 rounded-2xl border ${subCardBg}`}>
                   <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>{t.displayMode}</span>
                   <div className="grid grid-cols-2 gap-3">
