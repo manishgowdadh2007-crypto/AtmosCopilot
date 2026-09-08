@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.0")
+app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,37 +57,52 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-# 1. Geocoding Engine
+# Robust worldwide city resolver using wttr.in coordinate lookup
 async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
     if not place:
         return None
 
     clean_place = place.strip().strip("?.!,")
-    if clean_place.lower() in ["chenni", "chenai"]:
-        clean_place = "Chennai"
-    elif clean_place.lower() in ["kodagu", "coorg"]:
-        clean_place = "Madikeri"
+    # Handle common misspellings or regional names
+    typo_map = {
+        "chenni": "Chennai",
+        "chenai": "Chennai",
+        "kodagu": "Madikeri",
+        "coorg": "Madikeri",
+        "bangalore": "Bengaluru",
+        "davangere": "Davanagere"
+    }
+    target_query = typo_map.get(clean_place.lower(), clean_place)
 
-    geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={clean_place}&count=1&language=en&format=json"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/3.0"}
-
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/3.5"}
+    
+    # 1. Primary geocoder via Open-Meteo search
     try:
-        async with httpx.AsyncClient(timeout=7.0) as client:
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={target_query}&count=1&language=en&format=json"
+        async with httpx.AsyncClient(timeout=6.0) as client:
             res = await client.get(geo_url, headers=headers)
             if res.status_code == 200:
-                data = res.json()
-                results = data.get("results")
-                if results and len(results) > 0:
+                results = res.json().get("results")
+                if results:
                     top = results[0]
-                    lat = float(top["latitude"])
-                    lon = float(top["longitude"])
-                    name = top.get("name", clean_place)
-                    admin = top.get("admin1", "")
-                    country = top.get("country", "")
-                    label = f"{name}, {admin}" if admin else f"{name}, {country}" if country else name
-                    return lat, lon, label
+                    return float(top["latitude"]), float(top["longitude"]), top.get("name", target_query)
     except Exception as e:
-        print("Geocoding lookup error:", e)
+        print("Geocoding primary failed:", e)
+
+    # 2. Direct coordinate lookup via wttr.in
+    try:
+        wttr_url = f"https://wttr.in/{target_query}?format=j1"
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            res = await client.get(wttr_url, headers=headers)
+            if res.status_code == 200:
+                area = res.json().get("nearest_area", [{}])[0]
+                lat = float(area.get("latitude", 0))
+                lon = float(area.get("longitude", 0))
+                name = area.get("areaName", [{}])[0].get("value", target_query)
+                if lat != 0 and lon != 0:
+                    return lat, lon, name
+    except Exception as e:
+        print("wttr fallback geocoding failed:", e)
 
     return None
 
@@ -96,7 +111,7 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
     osm_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&zoom=16&addressdetails=1"
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/3.0"})
+            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/3.5"})
             if osm_res.status_code == 200:
                 addr = osm_res.json().get("address", {})
                 micro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("village") or addr.get("road")
@@ -110,14 +125,12 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
 
     return {"city": f"{lat:.4f}°N, {lon:.4f}°E"}
 
-# 2. Live Weather Engine (Bypasses Render's shared IP 429 rate limit)
 async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str) -> dict:
-    headers = {"User-Agent": "AtmosCopilot-WeatherCore/3.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/3.5"}
 
-    # Primary Source: wttr.in JSON feed (no IP quota blocks)
     try:
         wttr_url = f"https://wttr.in/{lat:.4f},{lon:.4f}?format=j1"
-        async with httpx.AsyncClient(timeout=6.0) as client:
+        async with httpx.AsyncClient(timeout=7.0) as client:
             res = await client.get(wttr_url, headers=headers)
             if res.status_code == 200:
                 data = res.json()
@@ -152,96 +165,61 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                     }
                 }
     except Exception as wttr_err:
-        print("wttr.in fetch error:", wttr_err)
-
-    # Secondary Source: Direct Open-Meteo query
-    try:
-        meteo_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto"
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.get(meteo_url, headers=headers)
-            if res.status_code == 200:
-                cur = res.json().get("current", {})
-                t = round(cur.get("temperature_2m", 25))
-                return {
-                    "resolved_city": location_label,
-                    "latitude": lat,
-                    "longitude": lon,
-                    "current": {
-                        "temp": t,
-                        "condition": "Partly Cloudy",
-                        "humidity": round(cur.get("relative_humidity_2m", 60)),
-                        "wind": round(cur.get("wind_speed_10m", 10)),
-                        "max_temp": t + 3,
-                        "min_temp": t - 4,
-                        "rain_prob": 15
-                    }
-                }
-    except Exception as meteo_err:
-        print("Open-Meteo backup fetch error:", meteo_err)
-
-    # Microclimate fallback if all outbound networks fail
-    is_hill_station = any(k in location_label.lower() for k in ["kodagu", "madikeri", "coorg", "ooty", "shimla", "munnar"])
-    base_temp = 20 if is_hill_station else round(33.0 - abs(lat - 13.0) * 1.5)
+        print("wttr.in error:", wttr_err)
 
     return {
         "resolved_city": location_label,
         "latitude": lat,
         "longitude": lon,
         "current": {
-            "temp": base_temp,
-            "condition": "Mist & Overcast" if is_hill_station else "Partly Cloudy",
-            "humidity": 82 if is_hill_station else 55,
-            "wind": 9 if is_hill_station else 14,
-            "max_temp": base_temp + 3,
-            "min_temp": base_temp - 4,
-            "rain_prob": 45 if is_hill_station else 10
+            "temp": 25,
+            "condition": "Partly Cloudy",
+            "humidity": 60,
+            "wind": 10,
+            "max_temp": 28,
+            "min_temp": 21,
+            "rain_prob": 15
         }
     }
 
-# 3. Conversational Copilot Intelligence
 @app.post("/api/copilot")
 @app.post("/api/ai-query")
 async def copilot_intelligence(req: QueryRequest):
     prompt_text = req.query.strip()
-
     target_lat = req.lat
     target_lon = req.lon
     target_name = "User Location"
 
-    place_match = re.search(r"(?:in|at|for|near|around)\s+([a-zA-Z\s]+)", prompt_text, re.IGNORECASE)
+    # Robust regex location matching covering typos like "wether in..."
     candidate = None
+    place_match = re.search(r"(?:in|at|for|near|around)\s+([a-zA-Z\s]+)", prompt_text, re.IGNORECASE)
     if place_match:
-        candidate = place_match.group(1).strip("?.!, ")
+        raw_place = place_match.group(1).strip("?.!, ")
+        cleaned = re.sub(r"\b(today|tomorrow|now|currently|tonight|please|the|a)\b", "", raw_place, flags=re.IGNORECASE).strip()
+        if len(cleaned) >= 3:
+            candidate = cleaned
     else:
-        words = [w for w in prompt_text.split() if len(w) > 3 and w.lower() not in ["what", "weather", "temperature", "forecast", "today"]]
+        words = [w for w in re.findall(r"[a-zA-Z]+", prompt_text) if len(w) > 3 and w.lower() not in ["what", "weather", "wether", "temperature", "forecast", "today", "tomorrow"]]
         if words:
             candidate = words[-1]
 
     if candidate:
-        candidate = re.sub(r"\b(today|tomorrow|now|currently|tonight|please)\b", "", candidate, flags=re.IGNORECASE).strip()
-        if len(candidate) >= 3:
-            geocoded = await resolve_place_coordinates(candidate)
-            if geocoded:
-                target_lat, target_lon, target_name = geocoded
-            else:
-                target_name = candidate.title()
+        resolved = await resolve_place_coordinates(candidate)
+        if resolved:
+            target_lat, target_lon, target_name = resolved
+        else:
+            target_name = candidate.title()
 
     telemetry = await fetch_live_grid_telemetry(target_lat, target_lon, target_name)
     cur = telemetry.get("current", {})
 
     groq_api_key = os.environ.get("GROQ_API_KEY", "").strip() or "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"
-
-    models_to_try = [
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b",
-        "qwen/qwen3.6-27b",
-        "groq/compound-mini"
-    ]
+    models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b", "groq/compound-mini"]
 
     system_instruction = (
-        "You are Sun Copilot, the AI meteorologist for AtmosCopilot. "
-        "Answer the user's weather question directly and conversationally without boilerplate intros. "
-        "Strictly use the provided [LIVE TELEMETRY] metrics. Keep answers under 60 words."
+        "You are Sun Copilot, the meteorological AI for AtmosCopilot. "
+        "Answer directly, naturally, and concisely using the provided live telemetry. "
+        "Strictly cite the exact numbers from the telemetry. Keep your response under 60 words."
     )
 
     context_message = f"""
@@ -276,13 +254,13 @@ User Inquiry:
                     "engine": f"groq-{m_id}"
                 }
             except Exception as loop_err:
-                print(f"Model {m_id} failed: {loop_err}")
+                print(f"Model {m_id} error:", loop_err)
                 continue
     except Exception as client_err:
-        print("Groq Client error:", client_err)
+        print("Groq Client init error:", client_err)
 
     return {
-        "reply": f"In {target_name}, it is currently {cur.get('condition')} at {cur.get('temp')}°C (High: {cur.get('max_temp')}°C, Low: {cur.get('min_temp')}°C) with a {cur.get('rain_prob')}% chance of rain.",
+        "reply": f"In {target_name}, it is currently {cur.get('condition')} at {cur.get('temp')}°C with a high of {cur.get('max_temp')}°C, low of {cur.get('min_temp')}°C, and a {cur.get('rain_prob')}% chance of rain.",
         "telemetry": telemetry,
         "engine": "fast_telemetry_fallback"
     }
