@@ -121,18 +121,27 @@ export default function App() {
 
   const syncTelemetryLocation = async (lat, lon, knownCity = null) => {
     try {
+      // 1. Resolve human-readable place name using Google Maps Geocoding
+      let resolvedPlace = knownCity;
+      if (!resolvedPlace || resolvedPlace.includes("°N") || resolvedPlace.includes("°E")) {
+        resolvedPlace = await reverseGeocodeCoordinates(lat, lon);
+      }
+
+      // 2. Fetch meteorological telemetry
       const [weatherData, environmentalData] = await Promise.all([
-        fetchWeatherTelemetry(lat, lon, knownCity),
+        fetchWeatherTelemetry(lat, lon, resolvedPlace),
         fetchEnvironmentalTelemetry(lat, lon)
       ]);
-      if (weatherData) setWeather(weatherData);
-      if (environmentalData) setEnvData(environmentalData);
 
-      reverseGeocodeCoordinates(lat, lon).then((cityName) => {
-        if (cityName && !cityName.includes("IPD Salappa")) {
-          setWeather((prev) => (prev ? { ...prev, resolved_city: cityName } : prev));
-        }
-      });
+      if (weatherData) {
+        setWeather({
+          ...weatherData,
+          resolved_city: resolvedPlace || weatherData.resolved_city || "Bengaluru, Karnataka"
+        });
+      }
+      if (environmentalData) {
+        setEnvData(environmentalData);
+      }
     } catch (err) {
       console.error("Telemetry sync error:", err);
     } finally {
