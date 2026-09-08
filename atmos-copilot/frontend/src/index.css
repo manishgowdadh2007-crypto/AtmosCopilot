@@ -2,25 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes floatParticle {
-  0% { transform: translateY(-10px) translateX(0px); opacity: 0.2; }
-  50% { transform: translateY(120px) translateX(25px); opacity: 0.6; }
-  100% { transform: translateY(240px) translateX(50px); opacity: 0; }
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #050811;
+  color: #f8fafc;
+  overflow: hidden;
 }
 
-.particle {
-  position: absolute;
-  width: 2px;
-  height: 60px;
-  background: linear-gradient(to bottom, rgba(255,255,255,0.4), transparent);
-  transform: rotate(15deg);
-  animation: floatParticle 3.5s linear infinite;
-}
-/* MotionSites 3D Interactive Perspective Layer */
-* {
-  transform-style: preserve-3d;
-}
-
-.perspective-1000 {
+/* Scoped 3D Perspective Class (Applied ONLY where needed, NEVER on *) */
+.perspective-container {
   perspective: 1000px;
 }
