@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Sparkles, ArrowRight, Lock, Mail, User, Phone, KeyRound } from 'lucide-react';
+import { Shield, ArrowRight, Lock, Mail, User, Phone, KeyRound } from 'lucide-react';
 import { registerUser, loginUser, resetPassword } from '../../services/api';
 
 export default function AuthModal({ onAuthorized, theme = 'dark' }) {
@@ -34,31 +33,15 @@ export default function AuthModal({ onAuthorized, theme = 'dark' }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.85, rotateX: 15, y: 30 }}
-        animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, rotateX: -10 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        style={{ perspective: 1200 }}
-        className="w-full max-w-md"
-      >
+      <div className="w-full max-w-md">
         <div className={`relative p-8 rounded-3xl border shadow-2xl backdrop-blur-2xl overflow-hidden ${
           theme === 'dark' 
-            ? 'bg-[#0b1120]/90 border-amber-500/30 text-white shadow-amber-500/10' 
+            ? 'bg-[#0b1120]/90 border-slate-700/60 text-white' 
             : 'bg-white/90 border-slate-300 text-slate-900 shadow-slate-900/20'
         }`}>
-          {/* Motion Gradient Glow Line */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 animate-pulse" />
-
-          {/* 3D Corner Hologram Markers */}
-          <div className="absolute top-3 left-3 w-3 h-3 border-t-2 border-l-2 border-amber-400" />
-          <div className="absolute top-3 right-3 w-3 h-3 border-t-2 border-r-2 border-amber-400" />
-          <div className="absolute bottom-3 left-3 w-3 h-3 border-b-2 border-l-2 border-amber-400" />
-          <div className="absolute bottom-3 right-3 w-3 h-3 border-b-2 border-r-2 border-amber-400" />
-
           <div className="text-center space-y-2 mb-6">
             <div className="inline-flex p-3 rounded-2xl bg-amber-500/15 text-amber-400 border border-amber-500/30">
-              <Shield className="w-7 h-7 animate-bounce" />
+              <Shield className="w-7 h-7" />
             </div>
             <h2 className="text-2xl font-black tracking-tight">
               {mode === 'login' && "Operator Authentication"}
@@ -139,16 +122,14 @@ export default function AuthModal({ onAuthorized, theme = 'dark' }) {
               </div>
             )}
 
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+            <button
               disabled={loading}
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 transition cursor-pointer"
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 transition active:scale-98 cursor-pointer"
             >
-              <span>{loading ? "Processing Encryption..." : mode === 'login' ? "Authorize Station" : mode === 'register' ? "Create Node" : "Reset Credentials"}</span>
+              <span>{loading ? "Processing..." : mode === 'login' ? "Authorize Station" : mode === 'register' ? "Create Node" : "Reset Credentials"}</span>
               <ArrowRight className="w-4 h-4" />
-            </motion.button>
+            </button>
           </form>
 
           <div className="flex items-center justify-between text-[11px] font-mono mt-6 pt-4 border-t border-slate-800">
@@ -162,7 +143,7 @@ export default function AuthModal({ onAuthorized, theme = 'dark' }) {
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
