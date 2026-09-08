@@ -41,56 +41,57 @@ export const fetchIPFallbackLocation = async () => {
   return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
 };
 
-// 2. High-Precision Micro-Locality Reverse Geocoding (Google Maps Native + Clean Dedup)
+// 2. High-Precision Micro-Locality Reverse Geocoding (Universal & Dynamic)
 export const reverseGeocodeCoordinates = async (lat, lon) => {
-  // Helper to cleanly combine neighborhood + city without duplicates like "Bengaluru, Bengaluru"
-  const formatLocationLabel = (neighborhood, city, state) => {
+  const formatLocationLabel = (neighborhood, city, state, country) => {
     const cleanNeigh = neighborhood?.trim();
     const cleanCity = city?.trim();
     const cleanState = state?.trim();
+    const cleanCountry = country?.trim();
 
     if (cleanNeigh && cleanCity && cleanNeigh.toLowerCase() !== cleanCity.toLowerCase()) {
       return `${cleanNeigh}, ${cleanCity}`;
     }
-    if (cleanNeigh) return cleanNeigh;
     if (cleanCity && cleanState && cleanCity.toLowerCase() !== cleanState.toLowerCase()) {
       return `${cleanCity}, ${cleanState}`;
     }
-    if (cleanCity) return cleanCity;
-    return "Bengaluru, Karnataka";
+    if (cleanCity && cleanCountry) {
+      return `${cleanCity}, ${cleanCountry}`;
+    }
+    return cleanCity || cleanNeigh || cleanState || `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
   };
 
-  // Priority 1: Google Maps Client SDK (Matches Route Planner exact neighborhood)
+  // Priority 1: Google Maps Client SDK
   if (typeof window !== 'undefined' && window.google && window.google.maps) {
     try {
       const geocoder = new window.google.maps.Geocoder();
       const response = await geocoder.geocode({ location: { lat, lng: lon } });
       if (response?.results?.length > 0) {
-        let neighborhood = "";
-        let city = "";
-        let state = "";
+        let neighborhood = "", city = "", state = "", country = "";
 
-        // Iterate through results to find the most specific micro-locality label
         for (const res of response.results) {
           for (const comp of res.address_components) {
             const types = comp.types;
             if (!neighborhood && (types.includes("sublocality_level_1") || types.includes("neighborhood") || types.includes("sublocality"))) {
               neighborhood = comp.long_name;
             }
-            if (!city && (types.includes("locality") || types.includes("administrative_area_level_2"))) {
+            if (!city && (types.includes("locality") || types.includes("postal_town"))) {
               city = comp.long_name;
             }
             if (!state && types.includes("administrative_area_level_1")) {
               state = comp.long_name;
             }
+            if (!country && types.includes("country")) {
+              country = comp.long_name;
+            }
           }
-          if (neighborhood) break;
+          if (city) break;
         }
 
-        return formatLocationLabel(neighborhood, city, state);
+        return formatLocationLabel(neighborhood, city, state, country);
       }
     } catch (err) {
-      console.warn("Google Maps client reverse geocode error:", err);
+      console.warn("Google Maps SDK reverse geocode error:", err);
     }
   }
 
@@ -102,9 +103,7 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
       if (gRes.ok) {
         const gData = await gRes.json();
         if (gData.results?.length > 0) {
-          let neighborhood = "";
-          let city = "";
-          let state = "";
+          let neighborhood = "", city = "", state = "", country = "";
 
           for (const res of gData.results) {
             for (const c of res.address_components) {
@@ -112,38 +111,42 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
               if (!neighborhood && (types.includes("sublocality_level_1") || types.includes("neighborhood") || types.includes("sublocality"))) {
                 neighborhood = c.long_name;
               }
-              if (!city && (types.includes("locality") || types.includes("administrative_area_level_2"))) {
+              if (!city && (types.includes("locality") || types.includes("postal_town"))) {
                 city = c.long_name;
               }
               if (!state && types.includes("administrative_area_level_1")) {
                 state = c.long_name;
               }
+              if (!country && types.includes("country")) {
+                country = c.long_name;
+              }
             }
-            if (neighborhood) break;
+            if (city) break;
           }
 
-          return formatLocationLabel(neighborhood, city, state);
+          return formatLocationLabel(neighborhood, city, state, country);
         }
       }
     } catch (e) {
-      console.warn("Google Maps HTTP reverse geocoding fallback failed:", e);
+      console.warn("Google Maps HTTP geocode error:", e);
     }
   }
 
-  // Priority 3: BigDataCloud Client Reverse Geocode
+  // Priority 3: BigDataCloud Client Reverse Geocode (Works worldwide without keys)
   try {
     const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
     if (bdcRes.ok) {
       const bData = await bdcRes.json();
       const neighborhood = bData.locality || bData.subPremise || bData.neighbourhood || "";
       const city = bData.city || bData.principalSubdivision || "";
-      return formatLocationLabel(neighborhood, city, "Karnataka");
+      const country = bData.countryName || "";
+      return formatLocationLabel(neighborhood, city, bData.principalSubdivision, country);
     }
   } catch (err) {
     console.warn("BigDataCloud fallback failed:", err);
   }
 
-  return "K H Ranganath Colony, Bengaluru";
+  return `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
 };
 
 // 3. User Authentication Protocols
