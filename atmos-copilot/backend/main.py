@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.4.1")
+app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,7 +57,7 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-# 4. Open-Meteo Direct Geocoding (Handles typos, worldwide cities, zero API keys required)
+# 1. Geocoding Engine
 async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
     if not place:
         return None
@@ -69,7 +69,7 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
         clean_place = "Madikeri"
 
     geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={clean_place}&count=1&language=en&format=json"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/2.4"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/3.0"}
 
     try:
         async with httpx.AsyncClient(timeout=7.0) as client:
@@ -96,7 +96,7 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
     osm_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&zoom=16&addressdetails=1"
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.4"})
+            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/3.0"})
             if osm_res.status_code == 200:
                 addr = osm_res.json().get("address", {})
                 micro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("village") or addr.get("road")
@@ -110,64 +110,32 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
 
     return {"city": f"{lat:.4f}°N, {lon:.4f}°E"}
 
-# 6. Ultra-Fast Live Open-Meteo Telemetry
+# 2. Live Weather Engine (Bypasses Render's shared IP 429 rate limit)
 async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str) -> dict:
-    meteo_url = (
-        f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={lat}&longitude={lon}"
-        f"&current_weather=true"
-        f"&hourly=relative_humidity_2m,precipitation_probability"
-        f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-        f"&timezone=auto"
-    )
+    headers = {"User-Agent": "AtmosCopilot-WeatherCore/3.0"}
 
-    def wmo_to_condition(code: int) -> str:
-        mapping = {
-            0: "Clear Sky",
-            1: "Mainly Clear",
-            2: "Partly Cloudy",
-            3: "Overcast",
-            45: "Fog",
-            48: "Depositing Rime Fog",
-            51: "Light Drizzle",
-            53: "Moderate Drizzle",
-            55: "Dense Drizzle",
-            61: "Slight Rain",
-            63: "Moderate Rain",
-            65: "Heavy Rain",
-            80: "Rain Showers",
-            81: "Moderate Showers",
-            82: "Violent Showers",
-            95: "Thunderstorm"
-        }
-        return mapping.get(code, "Partly Cloudy")
-
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/2.4"}
-
+    # Primary Source: wttr.in JSON feed (no IP quota blocks)
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            res = await client.get(meteo_url, headers=headers)
+        wttr_url = f"https://wttr.in/{lat:.4f},{lon:.4f}?format=j1"
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            res = await client.get(wttr_url, headers=headers)
             if res.status_code == 200:
                 data = res.json()
-                cw = data.get("current_weather", {})
-                daily = data.get("daily", {})
-                hourly = data.get("hourly", {})
+                cc = data["current_condition"][0]
+                weather_today = data["weather"][0]
 
-                cur_temp = round(cw.get("temperature", 26))
-                cur_wind = round(cw.get("windspeed", 10))
-                cur_code = cw.get("weathercode", 0)
+                cur_temp = int(cc.get("temp_C", 25))
+                cur_hum = int(cc.get("humidity", 60))
+                cur_wind = int(cc.get("windspeedKmph", 12))
+                cur_desc = cc.get("weatherDesc", [{}])[0].get("value", "Partly Cloudy")
 
-                cur_hour = datetime.now().hour
-                hum_list = hourly.get("relative_humidity_2m", [])
-                cur_hum = round(hum_list[cur_hour]) if cur_hour < len(hum_list) else (round(hum_list[0]) if hum_list else 55)
+                max_t = int(weather_today.get("maxtempC", cur_temp + 3))
+                min_t = int(weather_today.get("mintempC", cur_temp - 4))
 
-                max_list = daily.get("temperature_2m_max", [])
-                min_list = daily.get("temperature_2m_min", [])
-                rain_list = daily.get("precipitation_probability_max", [])
-
-                max_t = round(max_list[0]) if max_list else cur_temp + 3
-                min_t = round(min_list[0]) if min_list else cur_temp - 4
-                rain_p = round(rain_list[0]) if rain_list else 10
+                rain_prob = 10
+                hourly_entries = weather_today.get("hourly", [])
+                if hourly_entries:
+                    rain_prob = max([int(h.get("chanceofrain", 0)) for h in hourly_entries])
 
                 return {
                     "resolved_city": location_label,
@@ -175,37 +143,62 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                     "longitude": lon,
                     "current": {
                         "temp": cur_temp,
-                        "condition": wmo_to_condition(cur_code),
+                        "condition": cur_desc,
                         "humidity": cur_hum,
                         "wind": cur_wind,
                         "max_temp": max_t,
                         "min_temp": min_t,
-                        "rain_prob": rain_p
+                        "rain_prob": rain_prob
                     }
                 }
-            else:
-                print(f"Open-Meteo HTTP error {res.status_code}: {res.text}")
-    except Exception as e:
-        print("Meteo live sync exception:", e)
+    except Exception as wttr_err:
+        print("wttr.in fetch error:", wttr_err)
 
-    # Dynamic fallback based on latitude to prevent identical numbers if upstream fails
-    est_temp = round(32.0 - abs(lat - 13.0) * 1.8)
+    # Secondary Source: Direct Open-Meteo query
+    try:
+        meteo_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(meteo_url, headers=headers)
+            if res.status_code == 200:
+                cur = res.json().get("current", {})
+                t = round(cur.get("temperature_2m", 25))
+                return {
+                    "resolved_city": location_label,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": {
+                        "temp": t,
+                        "condition": "Partly Cloudy",
+                        "humidity": round(cur.get("relative_humidity_2m", 60)),
+                        "wind": round(cur.get("wind_speed_10m", 10)),
+                        "max_temp": t + 3,
+                        "min_temp": t - 4,
+                        "rain_prob": 15
+                    }
+                }
+    except Exception as meteo_err:
+        print("Open-Meteo backup fetch error:", meteo_err)
+
+    # Microclimate fallback if all outbound networks fail
+    is_hill_station = any(k in location_label.lower() for k in ["kodagu", "madikeri", "coorg", "ooty", "shimla", "munnar"])
+    base_temp = 20 if is_hill_station else round(33.0 - abs(lat - 13.0) * 1.5)
+
     return {
         "resolved_city": location_label,
         "latitude": lat,
         "longitude": lon,
         "current": {
-            "temp": est_temp,
-            "condition": "Partly Cloudy",
-            "humidity": 60,
-            "wind": 11,
-            "max_temp": est_temp + 3,
-            "min_temp": est_temp - 4,
-            "rain_prob": 15
+            "temp": base_temp,
+            "condition": "Mist & Overcast" if is_hill_station else "Partly Cloudy",
+            "humidity": 82 if is_hill_station else 55,
+            "wind": 9 if is_hill_station else 14,
+            "max_temp": base_temp + 3,
+            "min_temp": base_temp - 4,
+            "rain_prob": 45 if is_hill_station else 10
         }
     }
 
-# 7. Conversational Copilot Intelligence
+# 3. Conversational Copilot Intelligence
 @app.post("/api/copilot")
 @app.post("/api/ai-query")
 async def copilot_intelligence(req: QueryRequest):
@@ -247,11 +240,8 @@ async def copilot_intelligence(req: QueryRequest):
 
     system_instruction = (
         "You are Sun Copilot, the AI meteorologist for AtmosCopilot. "
-        "Answer the user's weather or climate question directly, concisely, and naturally. "
-        "Rules:\n"
-        "1. Strictly use the provided [LIVE TELEMETRY] metrics (exact temperature, high, low, condition, and rain chance).\n"
-        "2. Do not fabricate values or repeat boilerplate intros.\n"
-        "3. Keep answers under 60 words."
+        "Answer the user's weather question directly and conversationally without boilerplate intros. "
+        "Strictly use the provided [LIVE TELEMETRY] metrics. Keep answers under 60 words."
     )
 
     context_message = f"""
