@@ -377,15 +377,15 @@ User Message:
 
     if client:
         try:
-            completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": user_context}
-                ],
-                temperature=0.4,
-                max_tokens=220
-            )
+          completion = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_context}
+            ],
+            temperature=0.4,
+            max_tokens=220
+        )
             return {
                 "reply": completion.choices[0].message.content.strip(),
                 "telemetry": telemetry,
