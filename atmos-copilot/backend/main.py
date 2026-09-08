@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.2")
+app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,7 +83,7 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
     osm_url = f"https://nominatim.openstreetmap.org/search?q={clean_place}&format=json&limit=1"
     async with httpx.AsyncClient(timeout=6.0) as client:
         try:
-            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.3"})
+            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.4 (contact: dev@atmoscopilot.io)"})
             if res.status_code == 200:
                 data = res.json()
                 if data and len(data) > 0:
@@ -101,7 +101,7 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
     osm_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&zoom=16&addressdetails=1"
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.3"})
+            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.4 (contact: dev@atmoscopilot.io)"})
             if osm_res.status_code == 200:
                 addr = osm_res.json().get("address", {})
                 micro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("village") or addr.get("road")
@@ -136,9 +136,11 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
         if code in [95, 96, 99]: return "Thunderstorm"
         return "Partly Cloudy"
 
+    headers = {"User-Agent": "AtmosCopilot/2.4 (contact: dev@atmoscopilot.io)"}
+
     try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            res = await client.get(meteo_url)
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            res = await client.get(meteo_url, headers=headers)
             if res.status_code == 200:
                 data = res.json()
                 current = data.get("current", {})
@@ -151,9 +153,13 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                 cur_pressure = round(current.get("surface_pressure", 1013))
                 cur_condition = wmo_to_condition(current.get("weather_code", 1))
 
-                max_temp = round(daily_raw.get("temperature_2m_max", [cur_temp])[0])
-                min_temp = round(daily_raw.get("temperature_2m_min", [cur_temp])[0])
-                rain_prob = daily_raw.get("precipitation_probability_max", [0])[0]
+                max_temp_list = daily_raw.get("temperature_2m_max", [])
+                min_temp_list = daily_raw.get("temperature_2m_min", [])
+                rain_prob_list = daily_raw.get("precipitation_probability_max", [])
+
+                max_temp = round(max_temp_list[0]) if max_temp_list else cur_temp + 4
+                min_temp = round(min_temp_list[0]) if min_temp_list else cur_temp - 4
+                rain_prob = round(rain_prob_list[0]) if rain_prob_list else 10
 
                 return {
                     "resolved_city": location_label,
@@ -172,6 +178,8 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                         "rain_prob": rain_prob
                     }
                 }
+            else:
+                print(f"Open-Meteo HTTP {res.status_code}: {res.text}")
     except Exception as e:
         print("Meteo upstream error:", e)
 
