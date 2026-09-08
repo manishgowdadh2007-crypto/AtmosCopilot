@@ -39,7 +39,7 @@ export default function App() {
   })();
 
   const [user, setUser] = useState(savedUser);
-  const [stage, setStage] = useState(savedUser ? 'app' : 'splash');
+ const [stage, setStage] = useState('app'); // Boots directly to the dashboard immediately
   const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
   const [weather, setWeather] = useState(null);
@@ -804,7 +804,9 @@ export default function App() {
                     <span className={`font-medium ${headingText}`}>{city}</span>
                   </div>
                 </div>
-
+if (stage === 'splash') {
+  return <SplashScreen onFinish={() => setStage('app')} />;
+}
                 {/* Logout Button */}
                 <div className={`pt-4 border-t ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
                   <button
