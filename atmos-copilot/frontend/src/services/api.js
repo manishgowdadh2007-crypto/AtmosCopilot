@@ -41,22 +41,85 @@ export const fetchIPFallbackLocation = async () => {
   return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
 };
 
-// 2. High-Precision Micro-Locality Reverse Geocoding (Backend Server-Side & OSM Fallback)
+// 2. High-Precision Micro-Locality Reverse Geocoding (Google Maps Native + Fallbacks)
 export const reverseGeocodeCoordinates = async (lat, lon) => {
-  // 1. Call your backend reverse geocoder (bypasses browser CORS)
-  try {
-    const res = await fetch(`${BASE_URL}/reverse-geocode?lat=${lat}&lon=${lon}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.city && !data.city.includes("IPD Salappa")) {
-        return data.city;
+  // Priority 1: Google Maps JavaScript Geocoder (Identical engine used in Route Planner)
+  if (typeof window !== 'undefined' && window.google && window.google.maps) {
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      const response = await geocoder.geocode({ location: { lat, lng: lon } });
+      if (response && response.results && response.results.length > 0) {
+        const best = response.results[0];
+        let sublocality = "";
+        let locality = "";
+        let district = "";
+
+        for (const comp of best.address_components) {
+          const types = comp.types;
+          if (types.includes("sublocality") || types.includes("sublocality_level_1") || types.includes("neighborhood")) {
+            sublocality = comp.long_name;
+          }
+          if (types.includes("locality")) {
+            locality = comp.long_name;
+          }
+          if (types.includes("administrative_area_level_2")) {
+            district = comp.long_name;
+          }
+        }
+
+        const primary = sublocality || locality || district;
+        const secondary = locality !== primary ? locality : district;
+        if (primary && secondary) return `${primary}, ${secondary}`;
+        if (primary) return primary;
+        return best.formatted_address.split(",")[0];
       }
+    } catch (err) {
+      console.warn("Google Maps client reverse geocode issue:", err);
     }
-  } catch (err) {
-    console.warn("Backend reverse geocode failed, attempting direct OSM:", err);
   }
 
-  // 2. Direct browser-safe OSM reverse geocoding fallback
+  // Priority 2: Direct Google HTTP Geocoding API (using configured VITE_GOOGLE_MAPS_API_KEY)
+  const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyBhPlwJkVdXF158wum4Zglst7ALo9xs0gs";
+  if (googleApiKey) {
+    try {
+      const gRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${googleApiKey}`);
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        if (gData.results && gData.results.length > 0) {
+          const first = gData.results[0];
+          let sub = "", loc = "", dist = "";
+          for (const c of first.address_components) {
+            if (c.types.includes("sublocality") || c.types.includes("sublocality_level_1") || c.types.includes("neighborhood")) sub = c.long_name;
+            if (c.types.includes("locality")) loc = c.long_name;
+            if (c.types.includes("administrative_area_level_2")) dist = c.long_name;
+          }
+          const primary = sub || loc || dist;
+          const secondary = loc !== primary ? loc : dist;
+          if (primary && secondary) return `${primary}, ${secondary}`;
+          if (primary) return primary;
+          return first.formatted_address.split(",")[0];
+        }
+      }
+    } catch (e) {
+      console.warn("Google Maps HTTP geocoding fallback failed:", e);
+    }
+  }
+
+  // Priority 3: BigDataCloud Global Client API (Free, fast, no CORS restrictions)
+  try {
+    const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+    if (bdcRes.ok) {
+      const bData = await bdcRes.json();
+      const loc = bData.locality || bData.subPremise || bData.neighbourhood || "";
+      const city = bData.city || bData.principalSubdivision || "";
+      if (loc && city) return `${loc}, ${city}`;
+      if (city) return city;
+    }
+  } catch (err) {
+    console.warn("BigDataCloud fallback failed:", err);
+  }
+
+  // Priority 4: OpenStreetMap Nominatim
   try {
     const osmRes = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=16&addressdetails=1`,
@@ -64,18 +127,18 @@ export const reverseGeocodeCoordinates = async (lat, lon) => {
     );
     if (osmRes.ok) {
       const osmData = await osmRes.json();
-      const addr = osmData.address || {};
-      const micro = addr.suburb || addr.neighbourhood || addr.village || addr.road || "";
-      const major = addr.city || addr.town || addr.county || addr.state_district || "";
-      if (micro && major) return `${micro}, ${major}`;
-      if (major) return major;
+      const a = osmData.address || {};
+      const micro = a.suburb || a.neighbourhood || a.village || a.road || "";
+      const macro = a.city || a.town || a.county || a.state_district || "";
+      if (micro && macro) return `${micro}, ${macro}`;
+      if (macro) return macro;
       if (osmData.display_name) return osmData.display_name.split(",").slice(0, 2).join(",");
     }
-  } catch (e) {
-    console.warn("OSM fallback failed:", e);
+  } catch {
+    // Pass through to bounding default
   }
 
-  return `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
+  return "Bengaluru, Karnataka";
 };
 
 // 3. User Authentication Protocols
