@@ -11,7 +11,6 @@ from groq import Groq
 
 app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.2.1")
 
-# Standard-compliant CORS: wildcard origins require allow_credentials=False to prevent browser ERR_FAILED / CORS blocks
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Database Initialization
 def init_db():
     conn = sqlite3.connect("atmos_users.db")
     cursor = conn.cursor()
@@ -38,11 +36,8 @@ def init_db():
 
 init_db()
 
-# 2. Key Provisioning
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip() or "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"
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-
-groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 class QueryRequest(BaseModel):
     query: str
@@ -65,37 +60,12 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-# 3. Dynamic Location Name Extraction (Strict & Resilient)
-def extract_place_from_prompt(prompt: str) -> Optional[str]:
-    text = prompt.strip()
-
-    # Match explicit location prepositions
-    patterns = [
-        r"(?:weather|forecast|rain|temperature|temp|climate|conditions)\s+(?:in|at|for|around|of)\s+([a-zA-Z\s,]+)",
-        r"(?:in|at|for)\s+([a-zA-Z\s,]+)\s+(?:weather|forecast|rain|climate|temperature)",
-        r"what(?:'s|\s+is)\s+(?:the\s+)?weather\s+(?:like\s+)?(?:in|at|for)\s+([a-zA-Z\s,]+)",
-        r"how(?:'s|\s+is)\s+(?:the\s+)?weather\s+(?:in|at|for)\s+([a-zA-Z\s,]+)",
-        r"(?:dose|does)\s+it\s+rain\s+in\s+([a-zA-Z\s,]+)"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            candidate = match.group(1).strip("?.!, ")
-            cleaned = re.sub(r"\b(today|tomorrow|tomorow|now|currently|tonight|please)\b", "", candidate, flags=re.IGNORECASE).strip()
-            if cleaned and len(cleaned) >= 2:
-                return cleaned
-
-    # If the user asks a conversational question (e.g. "should i carry an umbrella"), do NOT treat it as a city
-    return None
-
-# 4. Live Forward Geocoding for Any Arbitrary Place Name
 async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
     if not place:
         return None
 
     clean_place = place.strip()
 
-    # Priority A: Google Geocoding API if key configured
     if GOOGLE_MAPS_API_KEY:
         google_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_place}&key={GOOGLE_MAPS_API_KEY}"
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -112,7 +82,6 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
             except Exception:
                 pass
 
-    # Priority B: OpenStreetMap Nominatim Live Geocoder (Global & Keyless)
     osm_url = f"https://nominatim.openstreetmap.org/search?q={clean_place}&format=json&limit=1"
     async with httpx.AsyncClient(timeout=6.0) as client:
         try:
@@ -129,7 +98,6 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
 
     return None
 
-# 5. Server-Side Reverse Geocoding Endpoint
 @app.get("/api/reverse-geocode")
 async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(...)):
     if GOOGLE_MAPS_API_KEY:
@@ -178,7 +146,6 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
 
     return {"city": f"{lat:.4f}°N, {lon:.4f}°E"}
 
-# 6. Fetch Live Open-Meteo Grid Telemetry with Resilient 429 Catching
 async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str) -> dict:
     meteo_url = (
         f"https://api.open-meteo.com/v1/forecast?"
@@ -191,7 +158,7 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
 
     def wmo_to_condition(code: int) -> str:
         if code == 0: return "Clear Sky"
-        if code in [1, 2]: return "Mainly Clear / Partly Cloudy"
+        if code in [1, 2]: return "Partly Cloudy"
         if code == 3: return "Overcast"
         if code in [45, 48]: return "Fog"
         if code in [51, 53, 55]: return "Drizzle"
@@ -276,9 +243,8 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                     "daily": daily
                 }
     except Exception as e:
-        print("Meteo upstream error or 429 rate limit:", e)
+        print("Meteo upstream error:", e)
 
-    # Resilient nominal fallback if Open-Meteo returns 429 or upstream network fails
     return {
         "resolved_city": location_label,
         "latitude": lat,
@@ -299,34 +265,22 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
             {"time": "6 pm", "temp": 26, "precip": 0, "wind": 12},
             {"time": "9 pm", "temp": 24, "precip": 0, "wind": 10},
             {"time": "12 am", "temp": 22, "precip": 0, "wind": 8},
-            {"time": "3 am", "temp": 20, "precip": 0, "wind": 7},
-            {"time": "6 am", "temp": 21, "precip": 5, "wind": 8},
-            {"time": "9 am", "temp": 25, "precip": 0, "wind": 11},
-            {"time": "12 pm", "temp": 28, "precip": 0, "wind": 14},
-            {"time": "3 pm", "temp": 29, "precip": 0, "wind": 13}
+            {"time": "3 am", "temp": 20, "precip": 0, "wind": 7}
         ],
         "daily": [
-            {"day": "Today", "max_temp": 30, "min_temp": 20, "condition": "Partly Cloudy", "chance_of_rain": 10},
-            {"day": "Tue", "max_temp": 29, "min_temp": 20, "condition": "Rain", "chance_of_rain": 45},
-            {"day": "Wed", "max_temp": 28, "min_temp": 19, "condition": "Rain", "chance_of_rain": 50},
-            {"day": "Thu", "max_temp": 30, "min_temp": 20, "condition": "Partly Cloudy", "chance_of_rain": 20},
-            {"day": "Fri", "max_temp": 31, "min_temp": 21, "condition": "Clear", "chance_of_rain": 10},
-            {"day": "Sat", "max_temp": 31, "min_temp": 20, "condition": "Clear", "chance_of_rain": 10},
-            {"day": "Sun", "max_temp": 30, "min_temp": 20, "condition": "Partly Cloudy", "chance_of_rain": 15}
+            {"day": "Today", "max_temp": 30, "min_temp": 20, "condition": "Partly Cloudy", "chance_of_rain": 10}
         ]
     }
 
-# 7. Sun Copilot Powered by Groq Llama 3.3 70B (Universal QA & Weather Intelligence)
 @app.post("/api/copilot")
 @app.post("/api/ai-query")
 async def copilot_intelligence(req: QueryRequest):
-    # Attempt to extract place or typo variant
     prompt_text = req.query.strip()
     match = re.search(r"(?:in|at|for|around)\s+([a-zA-Z\s]+)", prompt_text, re.IGNORECASE)
-    
+
     target_lat = req.lat
     target_lon = req.lon
-    target_name = "User's Current Location"
+    target_name = "User's Location"
 
     if match:
         extracted = match.group(1).strip("?.!, ")
@@ -341,60 +295,55 @@ async def copilot_intelligence(req: QueryRequest):
     telemetry = await fetch_live_grid_telemetry(target_lat, target_lon, target_name)
     cur = telemetry.get("current", {})
 
-    # Ensure Groq Client is initialized
-    active_groq_key = os.environ.get("GROQ_API_KEY", "").strip() or "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"
     client = None
     try:
-        if active_groq_key:
-            client = Groq(api_key=active_groq_key)
+        if GROQ_API_KEY:
+            client = Groq(api_key=GROQ_API_KEY)
     except Exception as init_err:
         print("Groq Init Error:", init_err)
 
-    # Groq System Instructions: Handles general knowledge, typos, and live weather telemetry
     system_instruction = (
-        "You are Sun Copilot, the sharp, intelligent, and helpful AI assistant for AtmosCopilot. "
-        "You answer EVERY question the user asks—including weather, typos (e.g. 'wether in chenni' means weather in Chennai), "
-        "travel suggestions, atmospheric science, or general conversations. "
+        "You are Sun Copilot, the sharp, authentic AI meteorological co-pilot for AtmosCopilot. "
+        "Answer the user's questions clearly, naturally, and contextually. "
+        "Handle spelling mistakes seamlessly (e.g., 'wether in chenni' means weather in Chennai). "
         "Rules:\n"
-        "1. Never give boilerplate openings like 'Sure!', 'Certainly!', or 'Here is the response'. Start directly with the answer.\n"
-        "2. If the user asks about weather, ground your answer in the provided live telemetry or infer the correct city from typos.\n"
-        "3. If the user asks general questions (math, advice, facts, conversation), answer them clearly and helpfully.\n"
-        "4. Keep responses crisp, natural, and under 100 words."
+        "1. Never give boilerplate openings (avoid 'Sure!', 'Certainly'). Jump directly into the answer.\n"
+        "2. For weather queries, ground your answer in the provided live telemetry.\n"
+        "3. Keep answers concise, helpful, and under 100 words."
     )
 
     user_context = f"""
-[LIVE TELEMETRY CONTEXT]
-Resolved Station: {target_name} ({target_lat:.4f}°N, {target_lon:.4f}°E)
-Temperature: {cur.get('temp', 26)}°C (High: {cur.get('max_temp', 30)}°C, Low: {cur.get('min_temp', 20)}°C)
-Atmosphere: {cur.get('condition', 'Partly Cloudy')}
+[LIVE VERIFIED METEOROLOGICAL TELEMETRY]
+Target Station: {target_name} ({target_lat:.4f}°N, {target_lon:.4f}°E)
+Current Temp: {cur.get('temp', 26)}°C (High: {cur.get('max_temp', 30)}°C / Low: {cur.get('min_temp', 20)}°C)
+Atmospheric State: {cur.get('condition', 'Partly Cloudy')}
 Relative Humidity: {cur.get('humidity', 55)}%
 Wind Velocity: {cur.get('wind', 12)} km/h
-Rain Probability: {cur.get('rain_prob', 10)}%
+Precipitation Probability: {cur.get('rain_prob', 10)}%
 
-User Message:
+User Inquiry:
 "{req.query}"
 """
 
     if client:
         try:
-          completion = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": user_context}
-            ],
-            temperature=0.4,
-            max_tokens=220
-        )
+            completion = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": user_context}
+                ],
+                temperature=0.3,
+                max_tokens=220
+            )
             return {
                 "reply": completion.choices[0].message.content.strip(),
                 "telemetry": telemetry,
-                "engine": "groq-llama-3.3-70b"
+                "engine": "groq-llama-3.1-8b"
             }
         except Exception as groq_err:
             print("Groq Inference Error:", groq_err)
 
-    # Secondary intelligent fallback if Groq quota or connection drops
     cond = cur.get('condition', 'Partly Cloudy')
     temp = cur.get('temp', 26)
     rain = cur.get('rain_prob', 10)
@@ -404,7 +353,6 @@ User Message:
         "engine": "smart_telemetry_fallback"
     }
 
-# 8. Standard Telemetry Endpoint
 @app.get("/api/weather-telemetry")
 async def get_weather_telemetry(
     lat: float = Query(...),
@@ -419,7 +367,6 @@ async def get_weather_telemetry(
 
     return await fetch_live_grid_telemetry(lat, lon, target_name)
 
-# 9. User Auth Endpoints
 @app.post("/api/register", status_code=status.HTTP_201_CREATED)
 def register(user: RegisterSchema):
     if not re.match(r"^[a-zA-Z\s]+$", user.name):
@@ -472,4 +419,4 @@ def reset_password(payload: ResetPasswordSchema):
 
 @app.get("/")
 def root():
-    return {"status": "online", "engine": "Groq Llama 3.3 70B Meteorological Core"}
+    return {"status": "online", "engine": "Groq Llama 3.1 8B Meteorological Core"}
