@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.3")
+app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,42 +57,36 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
+# 4. Open-Meteo Direct Geocoding (Handles typos, worldwide cities, zero API keys required)
 async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
     if not place:
         return None
 
-    clean_place = place.strip()
-    google_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    clean_place = place.strip().strip("?.!,")
+    # Normalize common typos
+    if clean_place.lower() in ["chenni", "chenai"]:
+        clean_place = "Chennai"
 
-    if google_key:
-        google_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_place}&key={google_key}"
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            try:
-                res = await client.get(google_url)
-                if res.status_code == 200:
-                    data = res.json()
-                    if data.get("results"):
-                        item = data["results"][0]
-                        lat = item["geometry"]["location"]["lat"]
-                        lon = item["geometry"]["location"]["lng"]
-                        name = item.get("formatted_address", clean_place).split(",")[0]
-                        return lat, lon, name
-            except Exception:
-                pass
+    geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={clean_place}&count=1&language=en&format=json"
+    headers = {"User-Agent": "AtmosCopilot-App/3.0 (dev-telemetry)"}
 
-    osm_url = f"https://nominatim.openstreetmap.org/search?q={clean_place}&format=json&limit=1"
-    async with httpx.AsyncClient(timeout=6.0) as client:
-        try:
-            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.4 (contact: dev@atmoscopilot.io)"})
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            res = await client.get(geo_url, headers=headers)
             if res.status_code == 200:
                 data = res.json()
-                if data and len(data) > 0:
-                    lat = float(data[0]["lat"])
-                    lon = float(data[0]["lon"])
-                    display_name = data[0]["display_name"].split(",")[0]
-                    return lat, lon, display_name
-        except Exception:
-            pass
+                results = data.get("results")
+                if results and len(results) > 0:
+                    top = results[0]
+                    lat = float(top["latitude"])
+                    lon = float(top["longitude"])
+                    name = top.get("name", clean_place)
+                    admin = top.get("admin1", "")
+                    country = top.get("country", "")
+                    label = f"{name}, {admin}" if admin else f"{name}, {country}" if country else name
+                    return lat, lon, label
+    except Exception as e:
+        print("Geocoding lookup error:", e)
 
     return None
 
@@ -115,13 +109,13 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
 
     return {"city": f"{lat:.4f}°N, {lon:.4f}°E"}
 
+# 6. Ultra-Fast Live Open-Meteo Telemetry
 async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str) -> dict:
     meteo_url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}"
         f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m"
-        f"&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,surface_pressure,wind_speed_10m"
-        f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"
+        f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max"
         f"&timezone=auto"
     )
 
@@ -136,30 +130,24 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
         if code in [95, 96, 99]: return "Thunderstorm"
         return "Partly Cloudy"
 
-    headers = {"User-Agent": "AtmosCopilot/2.4 (contact: dev@atmoscopilot.io)"}
+    headers = {"User-Agent": "AtmosCopilot-App/3.0 (dev-telemetry)"}
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=7.0) as client:
             res = await client.get(meteo_url, headers=headers)
             if res.status_code == 200:
                 data = res.json()
                 current = data.get("current", {})
-                daily_raw = data.get("daily", {})
+                daily = data.get("daily", {})
 
                 cur_temp = round(current.get("temperature_2m", 26))
-                cur_humidity = round(current.get("relative_humidity_2m", 55))
+                cur_hum = round(current.get("relative_humidity_2m", 55))
                 cur_wind = round(current.get("wind_speed_10m", 12))
-                cur_precip = round(current.get("precipitation", 0))
-                cur_pressure = round(current.get("surface_pressure", 1013))
-                cur_condition = wmo_to_condition(current.get("weather_code", 1))
+                cur_code = current.get("weather_code", 1)
 
-                max_temp_list = daily_raw.get("temperature_2m_max", [])
-                min_temp_list = daily_raw.get("temperature_2m_min", [])
-                rain_prob_list = daily_raw.get("precipitation_probability_max", [])
-
-                max_temp = round(max_temp_list[0]) if max_temp_list else cur_temp + 4
-                min_temp = round(min_temp_list[0]) if min_temp_list else cur_temp - 4
-                rain_prob = round(rain_prob_list[0]) if rain_prob_list else 10
+                max_list = daily.get("temperature_2m_max", [])
+                min_list = daily.get("temperature_2m_min", [])
+                rain_list = daily.get("precipitation_probability_max", [])
 
                 return {
                     "resolved_city": location_label,
@@ -167,37 +155,29 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                     "longitude": lon,
                     "current": {
                         "temp": cur_temp,
-                        "condition": cur_condition,
-                        "humidity": cur_humidity,
+                        "condition": wmo_to_condition(cur_code),
+                        "humidity": cur_hum,
                         "wind": cur_wind,
-                        "pressure": cur_pressure,
-                        "precipitation": cur_precip,
-                        "dew_point": round(cur_temp - ((100 - cur_humidity) / 5)),
-                        "max_temp": max_temp,
-                        "min_temp": min_temp,
-                        "rain_prob": rain_prob
+                        "max_temp": round(max_list[0]) if max_list else cur_temp + 3,
+                        "min_temp": round(min_list[0]) if min_list else cur_temp - 4,
+                        "rain_prob": round(rain_list[0]) if rain_list else 10
                     }
                 }
-            else:
-                print(f"Open-Meteo HTTP {res.status_code}: {res.text}")
     except Exception as e:
-        print("Meteo upstream error:", e)
+        print("Meteo live sync error:", e)
 
     return {
         "resolved_city": location_label,
         "latitude": lat,
         "longitude": lon,
         "current": {
-            "temp": 26,
-            "condition": "Partly Cloudy",
-            "humidity": 55,
-            "wind": 12,
-            "pressure": 1013,
-            "precipitation": 0,
-            "dew_point": 16,
-            "max_temp": 30,
-            "min_temp": 20,
-            "rain_prob": 10
+            "temp": 24,
+            "condition": "Clear",
+            "humidity": 50,
+            "wind": 10,
+            "max_temp": 28,
+            "min_temp": 19,
+            "rain_prob": 5
         }
     }
 
@@ -206,16 +186,23 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
 @app.post("/api/ai-query")
 async def copilot_intelligence(req: QueryRequest):
     prompt_text = req.query.strip()
-    
+
     target_lat = req.lat
     target_lon = req.lon
     target_name = "User Location"
 
-    place_match = re.search(r"\b(?:in|at|for|near|around)\s+([a-zA-Z\s]+)$", prompt_text, re.IGNORECASE)
+    place_match = re.search(r"(?:in|at|for|near|around)\s+([a-zA-Z\s]+)", prompt_text, re.IGNORECASE)
+    candidate = None
     if place_match:
         candidate = place_match.group(1).strip("?.!, ")
+    else:
+        words = [w for w in prompt_text.split() if len(w) > 3 and w.lower() not in ["what", "weather", "temperature", "forecast", "today"]]
+        if words:
+            candidate = words[-1]
+
+    if candidate:
         candidate = re.sub(r"\b(today|tomorrow|now|currently|tonight|please)\b", "", candidate, flags=re.IGNORECASE).strip()
-        if candidate and len(candidate) >= 3:
+        if len(candidate) >= 3:
             geocoded = await resolve_place_coordinates(candidate)
             if geocoded:
                 target_lat, target_lon, target_name = geocoded
@@ -225,67 +212,65 @@ async def copilot_intelligence(req: QueryRequest):
     telemetry = await fetch_live_grid_telemetry(target_lat, target_lon, target_name)
     cur = telemetry.get("current", {})
 
-    groq_api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    groq_api_key = os.environ.get("GROQ_API_KEY", "").strip() or "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"
 
-    if groq_api_key:
-        models_to_try = [
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.6-27b",
-            "groq/compound-mini"
-        ]
+    models_to_try = [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b",
+        "groq/compound-mini"
+    ]
 
-        system_instruction = (
-            "You are Sun Copilot, the sharp, authentic AI meteorological co-pilot for AtmosCopilot. "
-            "Answer the user's question directly, conversationally, and contextually without robotic greetings. "
-            "Automatically handle spelling mistakes (e.g. 'wether in kodagu' means weather in Kodagu, 'umbarcla' means umbrella). "
-            "For weather and clothing questions, ground your recommendation strictly in the provided live telemetry. "
-            "Keep the reply concise and under 90 words."
-        )
+    system_instruction = (
+        "You are Sun Copilot, the AI meteorologist for AtmosCopilot. "
+        "Answer the user's weather or climate question directly, concisely, and naturally. "
+        "Rules:\n"
+        "1. Strictly use the provided [LIVE TELEMETRY] metrics (exact temperature, high, low, condition, and rain chance).\n"
+        "2. Do not fabricate values or repeat boilerplate intros.\n"
+        "3. Keep answers under 60 words."
+    )
 
-        context_message = f"""
+    context_message = f"""
 [LIVE TELEMETRY]
 Target Locality: {target_name} ({target_lat:.4f}°N, {target_lon:.4f}°E)
-Ambient Temp: {cur.get('temp', 26)}°C (High: {cur.get('max_temp', 30)}°C / Low: {cur.get('min_temp', 20)}°C)
-Conditions: {cur.get('condition', 'Partly Cloudy')}
-Relative Humidity: {cur.get('humidity', 55)}%
-Wind Velocity: {cur.get('wind', 12)} km/h
-Precipitation Probability: {cur.get('rain_prob', 10)}%
+Live Temp: {cur.get('temp')}°C (High: {cur.get('max_temp')}°C, Low: {cur.get('min_temp')}°C)
+Condition: {cur.get('condition')}
+Humidity: {cur.get('humidity')}%
+Wind Speed: {cur.get('wind')} km/h
+Rain Probability: {cur.get('rain_prob')}%
 
 User Inquiry:
 "{req.query}"
 """
 
-        try:
-            client = Groq(api_key=groq_api_key)
-            for m_id in models_to_try:
-                try:
-                    completion = client.chat.completions.create(
-                        model=m_id,
-                        messages=[
-                            {"role": "system", "content": system_instruction},
-                            {"role": "user", "content": context_message}
-                        ],
-                        temperature=0.35,
-                        max_tokens=220
-                    )
-                    return {
-                        "reply": completion.choices[0].message.content.strip(),
-                        "telemetry": telemetry,
-                        "engine": f"groq-{m_id}"
-                    }
-                except Exception as model_err:
-                    print(f"Groq failure on {m_id}: {model_err}")
-                    continue
-        except Exception as client_err:
-            print("Groq Client Initialization Error:", client_err)
+    try:
+        client = Groq(api_key=groq_api_key)
+        for m_id in models_to_try:
+            try:
+                completion = client.chat.completions.create(
+                    model=m_id,
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": context_message}
+                    ],
+                    temperature=0.2,
+                    max_tokens=150
+                )
+                return {
+                    "reply": completion.choices[0].message.content.strip(),
+                    "telemetry": telemetry,
+                    "engine": f"groq-{m_id}"
+                }
+            except Exception as loop_err:
+                print(f"Model {m_id} failed: {loop_err}")
+                continue
+    except Exception as client_err:
+        print("Groq Client error:", client_err)
 
-    rain_prob = cur.get('rain_prob', 10)
-    rain_advice = "Pack an umbrella just in case." if rain_prob > 30 else "No umbrella needed today."
     return {
-        "reply": f"In {target_name}, expect {cur.get('condition', 'Partly Cloudy')} conditions around {cur.get('temp', 26)}°C with a {rain_prob}% chance of rain. {rain_advice}",
+        "reply": f"In {target_name}, it is currently {cur.get('condition')} at {cur.get('temp')}°C (High: {cur.get('max_temp')}°C, Low: {cur.get('min_temp')}°C) with a {cur.get('rain_prob')}% chance of rain.",
         "telemetry": telemetry,
-        "engine": "local_telemetry_fallback"
+        "engine": "fast_telemetry_fallback"
     }
 
 @app.get("/api/weather-telemetry")
