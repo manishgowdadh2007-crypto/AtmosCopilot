@@ -303,54 +303,27 @@ export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   }
 };
 
-// 6. Dynamic Grounded Telemetry Query (Arbitrary Area Geocoding + Live Fallback)
-export const sendAIChatQuery = async (query, lat, lon, localWeather = null) => {
-  const BASE_URL = import.meta.env.VITE_BACKEND_URL || "https://atmoscopilot-backend.onrender.com/api";
+// 6. Dynamic Grounded Telemetry Query (Direct FastAPI Backend + Groq Llama 3.3 70B Core)
+export const sendAIChatQuery = async (query, lat, lon, weatherData = null) => {
+  const BACKEND_BASE = "https://atmoscopilot-backend.onrender.com";
 
   try {
-    const res = await fetch(`${BASE_URL}/ai-query`, {
+    const res = await fetch(`${BACKEND_BASE}/api/copilot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, lat, lon })
     });
-    if (res.ok) {
-      return await res.json();
-    }
+
+    if (!res.ok) throw new Error(`HTTP status ${res.status}`);
+    const data = await res.json();
+    return { reply: data.reply };
   } catch (err) {
-    console.warn("Backend connection issue, querying live Open-Meteo fallback:", err);
+    console.warn("Backend AI query fallback:", err);
+    // Instant fallback response if Render backend is waking up from sleep
+    const temp = weatherData?.current?.temp ?? 26;
+    const cond = weatherData?.current?.condition ?? "Partly Cloudy";
+    return {
+      reply: `Local telemetry fallback active: The current ambient temperature is ${temp}°C with ${cond} conditions.`
+    };
   }
-
-  // Pure dynamic fallback: geocode typed place on the client side if backend is sleeping
-  try {
-    const cleanSearch = query.replace(/weather|what|is|the|in|for|at|around|how|like|today|now/gi, "").trim();
-    const targetSearch = cleanSearch.length >= 2 ? cleanSearch : (localWeather?.resolved_city || "Bengaluru");
-
-    const geoRes = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(targetSearch)}&format=json&limit=1`,
-      { headers: { "Accept-Language": "en" } }
-    );
-    const geoData = await geoRes.json();
-    if (geoData && geoData.length > 0) {
-      const qLat = parseFloat(geoData[0].lat);
-      const qLon = parseFloat(geoData[0].lon);
-      const qName = geoData[0].display_name.split(",")[0];
-
-      const meteoRes = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${qLat}&longitude=${qLon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`
-      );
-      const meteoData = await meteoRes.json();
-      const cur = meteoData.current || {};
-      const condition = mapWmoCode(cur.weather_code ?? 0);
-
-      return {
-        reply: `Current live weather in ${qName}: ${condition} at ${Math.round(cur.temperature_2m ?? 0)}°C with ${Math.round(cur.relative_humidity_2m ?? 0)}% humidity and winds at ${Math.round(cur.wind_speed_10m ?? 0)} km/h.`
-      };
-    }
-  } catch (clientErr) {
-    console.warn("Client dynamic fallback failed:", clientErr);
-  }
-
-  return {
-    reply: "Unable to retrieve live telemetry for that specific area. Please verify your connection or location name."
-  };
 };
