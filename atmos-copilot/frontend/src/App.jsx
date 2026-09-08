@@ -43,7 +43,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState({ lat: 12.9716, lon: 77.5946 });
 
-  // Initialized with fallback dataset so UI renders immediately without crashing or black-screening
+  // Baseline telemetry ensures instant zero-latency render with no black-screen unmounts
   const [weather, setWeather] = useState({
     resolved_city: "Bengaluru, Karnataka",
     latitude: 12.9716,
@@ -125,7 +125,6 @@ export default function App() {
   };
 
   const syncTelemetryLocation = async (lat, lon, knownCity = null) => {
-    setIsLocating(true);
     try {
       const [weatherData, environmentalData] = await Promise.all([
         fetchWeatherTelemetry(lat, lon, knownCity),
@@ -140,57 +139,50 @@ export default function App() {
         }
       });
     } catch (err) {
-      console.error("Telemetry sync error:", err);
+      console.error("Telemetry synchronization fallback triggered:", err);
     } finally {
       setIsLocating(false);
     }
   };
 
+  // Guarded against rapid timeout loops and Open-Meteo 429 exhaustion
   const acquireAccuratePosition = () => {
+    if (isLocating) return;
     setIsLocating(true);
 
-    const fallbackToIP = async () => {
+    const fallbackToDefault = async () => {
       try {
         const ipLoc = await fetchIPFallbackLocation();
-        setCoords({ lat: ipLoc.lat, lon: ipLoc.lon });
-        syncTelemetryLocation(ipLoc.lat, ipLoc.lon, ipLoc.city);
-      } catch {
-        syncTelemetryLocation(12.9716, 77.5946, "Bengaluru, Karnataka");
+        if (ipLoc && ipLoc.lat) {
+          setCoords({ lat: ipLoc.lat, lon: ipLoc.lon });
+          syncTelemetryLocation(ipLoc.lat, ipLoc.lon, ipLoc.city);
+          return;
+        }
+      } catch (err) {
+        console.warn("IP Fallback failed, defaulting to Bengaluru station grid", err);
       }
+      syncTelemetryLocation(12.9716, 77.5946, "Bengaluru, Karnataka");
     };
 
     if (!navigator.geolocation) {
-      fallbackToIP();
+      fallbackToDefault();
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const accurate = {
-          lat: parseFloat(pos.coords.latitude.toFixed(6)),
-          lon: parseFloat(pos.coords.longitude.toFixed(6)),
+          lat: parseFloat(pos.coords.latitude.toFixed(4)),
+          lon: parseFloat(pos.coords.longitude.toFixed(4)),
         };
         setCoords(accurate);
         syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("Hardware GPS lock unavailable, using network fallback:", err.message);
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const lowAcc = {
-              lat: parseFloat(pos.coords.latitude.toFixed(6)),
-              lon: parseFloat(pos.coords.longitude.toFixed(6)),
-            };
-            setCoords(lowAcc);
-            syncTelemetryLocation(lowAcc.lat, lowAcc.lon);
-          },
-          () => {
-            fallbackToIP();
-          },
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
-        );
+        console.warn("GPS lock unavailable, using fallback grid:", err.message);
+        fallbackToDefault();
       },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
     );
   };
 
@@ -323,7 +315,7 @@ export default function App() {
     return "☀️";
   };
 
-  // Protected curve generator against empty data crashes
+  // Safe vector generation guarded against null or empty projection arrays
   const calculateRealCurve = (dataList, metric) => {
     if (!dataList || dataList.length < 2) {
       return { path: "M 0,70 L 800,70", area: "M 0,70 L 800,70 L 800,140 L 0,140 Z", coords: [], values: [] };
@@ -379,7 +371,7 @@ export default function App() {
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden font-sans select-none">
       
-      {/* 1. Global Constant Video Background */}
+      {/* 1. Video Background */}
       <video
         autoPlay
         loop
@@ -395,7 +387,7 @@ export default function App() {
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
 
-      {/* 2. Glassmorphic Atmosphere Tint */}
+      {/* 2. Atmosphere Tint */}
       <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
         theme === 'dark'
           ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/35 to-[#050811]/80'
@@ -741,7 +733,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Display Theme Selector */}
+                {/* Theme Selector */}
                 <div className={`p-4 rounded-2xl border ${subCardBg}`}>
                   <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>{t.displayMode}</span>
                   <div className="grid grid-cols-2 gap-3">
