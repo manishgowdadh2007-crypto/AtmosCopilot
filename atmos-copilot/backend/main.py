@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.0")
+app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.3.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -199,7 +199,6 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
 async def copilot_intelligence(req: QueryRequest):
     prompt_text = req.query.strip()
     
-    # Extract place target if explicitly indicated by prepositions
     target_lat = req.lat
     target_lon = req.lon
     target_name = "User Location"
@@ -221,20 +220,21 @@ async def copilot_intelligence(req: QueryRequest):
     groq_api_key = os.environ.get("GROQ_API_KEY", "").strip()
 
     if groq_api_key:
-        try:
-            client = Groq(api_key=groq_api_key)
-            system_instruction = (
-                "You are Sun Copilot, the authentic, witty, and helpful AI meteorologist for AtmosCopilot. "
-                "Answer every question naturally and contextually. "
-                "Automatically correct typos (e.g., 'wether in chenni' means weather in Chennai, 'umbarcla' means umbrella). "
-                "Rules:\n"
-                "1. Jump straight into the response without meta announcements (avoid 'Sure!', 'Certainly', 'Here is the weather').\n"
-                "2. When answering weather or rain questions, ground your guidance in the provided telemetry (temp, condition, rain probability).\n"
-                "3. If the user asks general or conversational questions, provide insightful, friendly answers.\n"
-                "4. Keep answers concise (under 80 words)."
-            )
+        models_to_try = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "llama3-8b-8192"
+        ]
 
-            context_message = f"""
+        system_instruction = (
+            "You are Sun Copilot, the sharp, authentic AI meteorological co-pilot for AtmosCopilot. "
+            "Answer the user's question directly, conversationally, and contextually without robotic greetings. "
+            "Automatically handle spelling mistakes (e.g. 'wether in kodagu' means weather in Kodagu, 'umbarcla' means umbrella). "
+            "For weather and clothing questions, ground your recommendation strictly in the provided live telemetry. "
+            "Keep the reply concise and under 90 words."
+        )
+
+        context_message = f"""
 [LIVE TELEMETRY]
 Target Locality: {target_name} ({target_lat:.4f}°N, {target_lon:.4f}°E)
 Ambient Temp: {cur.get('temp', 26)}°C (High: {cur.get('max_temp', 30)}°C / Low: {cur.get('min_temp', 20)}°C)
@@ -247,25 +247,30 @@ User Inquiry:
 "{req.query}"
 """
 
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": context_message}
-                ],
-                temperature=0.35,
-                max_tokens=220
-            )
+        try:
+            client = Groq(api_key=groq_api_key)
+            for m_id in models_to_try:
+                try:
+                    completion = client.chat.completions.create(
+                        model=m_id,
+                        messages=[
+                            {"role": "system", "content": system_instruction},
+                            {"role": "user", "content": context_message}
+                        ],
+                        temperature=0.35,
+                        max_tokens=220
+                    )
+                    return {
+                        "reply": completion.choices[0].message.content.strip(),
+                        "telemetry": telemetry,
+                        "engine": f"groq-{m_id}"
+                    }
+                except Exception as model_err:
+                    print(f"Groq failure on {m_id}: {model_err}")
+                    continue
+        except Exception as client_err:
+            print("Groq Client Initialization Error:", client_err)
 
-            return {
-                "reply": completion.choices[0].message.content.strip(),
-                "telemetry": telemetry,
-                "engine": "groq-llama-3.1-8b"
-            }
-        except Exception as err:
-            print("Groq Runtime Error:", err)
-
-    # Fallback only when Groq cannot be reached
     rain_prob = cur.get('rain_prob', 10)
     rain_advice = "Pack an umbrella just in case." if rain_prob > 30 else "No umbrella needed today."
     return {
@@ -340,4 +345,4 @@ def reset_password(payload: ResetPasswordSchema):
 
 @app.get("/")
 def root():
-    return {"status": "online", "engine": "Groq Llama 3.1 8B Meteorological Core"}
+    return {"status": "online", "engine": "Groq Dynamic Meteorological Intelligence Engine"}
