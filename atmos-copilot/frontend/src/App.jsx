@@ -4,6 +4,9 @@ import {
   Settings, LogOut, User, Mail, Phone, Clock, ShieldCheck, CheckCircle2,
   Sun, Moon
 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import MotionCard from './components/common/MotionCard';
+
 import SatelliteView from './components/home/SatelliteView';
 import EnvironmentalPanel from './components/home/EnvironmentalPanel';
 import AgriAdvisoryView from './components/home/AgriAdvisoryView';
@@ -327,7 +330,6 @@ export default function App() {
 
   const { path: dynamicStroke, area: dynamicArea, coords: activeGraphPoints, values: activeGraphValues } = calculateRealCurve(activeHourlyData, activeMetric);
 
-  // Cards have soft glassmorphism so the globe video shows behind them cleanly
   const cardBg = theme === 'dark' 
     ? 'bg-[#0d1322]/80 border-slate-700/60 text-slate-100 shadow-2xl backdrop-blur-md' 
     : 'bg-white/75 border-slate-300/80 text-slate-900 shadow-xl shadow-slate-900/10 backdrop-blur-md';
@@ -342,7 +344,7 @@ export default function App() {
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden font-sans select-none">
       
-      {/* 1. GLOBAL CONSTANT BACKGROUND VIDEO LAYER */}
+      {/* 1. Global Constant Video Background */}
       <video
         autoPlay
         loop
@@ -358,14 +360,14 @@ export default function App() {
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
 
-      {/* 2. ATMOSPHERIC GLASS TINT (Preserves Globe Clarity across Themes) */}
+      {/* 2. Glassmorphic Atmosphere Tint */}
       <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
         theme === 'dark'
           ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/35 to-[#050811]/80'
           : 'bg-gradient-to-b from-[#b8c7d9]/50 via-[#cdd8e6]/30 to-[#a8bbce]/60'
       }`} />
 
-      {/* 3. HEADER BAR (Transparent Glass) */}
+      {/* 3. Header Bar */}
       <div className="relative z-50 flex-shrink-0">
         <Header 
           weather={weather}
@@ -380,15 +382,15 @@ export default function App() {
         />
       </div>
 
-      {/* 4. MAIN VIEWPORT ROUTER (Always Transparent) */}
+      {/* 4. Main Viewport Router */}
       <main className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-7xl mx-auto space-y-6">
               
-              {/* Station Banner */}
+              {/* Station Banner & Met Matrix with 3D MotionCard Wrappers */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl relative overflow-hidden flex flex-col justify-between ${cardBg}`}>
+                <MotionCard className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
@@ -398,7 +400,7 @@ export default function App() {
                         </span>
                         <button
                           onClick={acquireAccuratePosition}
-                          className="ml-2 text-[10px] text-amber-500 hover:text-amber-600 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
+                          className="ml-2 text-[10px] text-amber-500 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
                         >
                           {isLocating ? t.readingGps : t.refreshGps}
                         </button>
@@ -408,7 +410,7 @@ export default function App() {
                         {t.hardwareGps}: {coords ? `${formatNativeNumber(coords.lat.toFixed(4), lang)}°N, ${formatNativeNumber(coords.lon.toFixed(4), lang)}°E` : t.acquiring}
                       </p>
                     </div>
-                    
+
                     <div className="flex flex-col items-end">
                       <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
                       <span className="text-xs font-mono font-bold text-amber-500 mt-2 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">
@@ -429,45 +431,45 @@ export default function App() {
                       <div className={`text-xs ${subText}`}>{t.precipitation}: {formatNativeNumber(cur.precipitation, lang)}%</div>
                     </div>
                   </div>
-                </div>
+                </MotionCard>
 
-                {/* Auxiliary Atmospheric Vectors */}
+                {/* 4 Corner Met Station Cards */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.windVelocity}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.wind, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>km/h</span>
                     </div>
                     <span className="text-[11px] text-emerald-500 font-medium">{t.surfaceVector}</span>
-                  </div>
+                  </MotionCard>
 
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.relativeHumidity}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.humidity, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>%</span>
                     </div>
                     <span className="text-[11px] text-cyan-500 font-medium">{t.atmosphericMoisture}</span>
-                  </div>
+                  </MotionCard>
 
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.precipitation}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.precipitation, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>%</span>
                     </div>
                     <span className="text-[11px] text-indigo-500 font-medium">{t.modelProbability}</span>
-                  </div>
+                  </MotionCard>
 
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                  <MotionCard className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.dewPoint}</span>
                     <div className="my-2">
                       <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.dew_point, lang)}</span>
                       <span className={`text-xs ml-1 ${subText}`}>°C</span>
                     </div>
                     <span className="text-[11px] text-amber-500 font-medium">{t.baseline}</span>
-                  </div>
+                  </MotionCard>
                 </div>
               </div>
 
