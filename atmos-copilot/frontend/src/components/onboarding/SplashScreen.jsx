@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 
 export default function SplashScreen({ onFinish }) {
   useEffect(() => {
-    // Force transition after 800ms without blocking on any network or GPS calls
     const timer = setTimeout(() => {
       if (typeof onFinish === 'function') {
         onFinish();
@@ -31,12 +30,10 @@ export default function SplashScreen({ onFinish }) {
         </p>
 
         <div className="flex gap-1.5 pt-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" style={{ animationDelay: '200ms' }} />
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" style={{ animationDelay: '400ms' }} />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '300ms' }} />
         </div>
-
-        <span className="text-[10px] text-slate-600 font-mono pt-4">Click anywhere to skip</span>
       </div>
     </div>
   );
