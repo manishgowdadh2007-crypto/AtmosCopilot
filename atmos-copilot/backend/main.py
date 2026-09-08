@@ -65,32 +65,27 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-# 3. Dynamic Location Name Extraction
+# 3. Dynamic Location Name Extraction (Strict & Resilient)
 def extract_place_from_prompt(prompt: str) -> Optional[str]:
     text = prompt.strip()
-    
+
+    # Match explicit location prepositions
     patterns = [
         r"(?:weather|forecast|rain|temperature|temp|climate|conditions)\s+(?:in|at|for|around|of)\s+([a-zA-Z\s,]+)",
         r"(?:in|at|for)\s+([a-zA-Z\s,]+)\s+(?:weather|forecast|rain|climate|temperature)",
         r"what(?:'s|\s+is)\s+(?:the\s+)?weather\s+(?:like\s+)?(?:in|at|for)\s+([a-zA-Z\s,]+)",
         r"how(?:'s|\s+is)\s+(?:the\s+)?weather\s+(?:in|at|for)\s+([a-zA-Z\s,]+)",
+        r"(?:dose|does)\s+it\s+rain\s+in\s+([a-zA-Z\s,]+)"
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             candidate = match.group(1).strip("?.!, ")
-            cleaned = re.sub(r"\b(today|tomorrow|now|currently|tonight|please)\b", "", candidate, flags=re.IGNORECASE).strip()
+            cleaned = re.sub(r"\b(today|tomorrow|tomorow|now|currently|tonight|please)\b", "", candidate, flags=re.IGNORECASE).strip()
             if cleaned and len(cleaned) >= 2:
                 return cleaned
 
-    noise = {"what", "is", "the", "weather", "forecast", "temp", "temperature", "rain", 
-             "in", "at", "for", "how", "like", "today", "now", "tell", "me", "about"}
-    words = [w.strip("?.!,") for w in text.split() if w.strip("?.!,").lower() not in noise]
-    if words:
-        candidate = " ".join(words).strip()
-        if len(candidate) >= 2:
-            return candidate
-
+    # If the user asks a conversational question (e.g. "should i carry an umbrella"), do NOT treat it as a city
     return None
 
 # 4. Live Forward Geocoding for Any Arbitrary Place Name
