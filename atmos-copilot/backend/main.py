@@ -7,10 +7,9 @@ from fastapi import FastAPI, Query, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
-from google import genai
-from google.genai import types
+from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Dynamic Telemetry Engine", version="2.1.0")
+app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,9 +38,10 @@ def init_db():
 init_db()
 
 # 2. Key Provisioning
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 class QueryRequest(BaseModel):
     query: str
@@ -64,11 +64,10 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-# 3. Dynamic Location Name Extraction (Handles Any Global Area/Typo)
+# 3. Dynamic Location Name Extraction
 def extract_place_from_prompt(prompt: str) -> Optional[str]:
     text = prompt.strip()
     
-    # Common conversational query patterns
     patterns = [
         r"(?:weather|forecast|rain|temperature|temp|climate|conditions)\s+(?:in|at|for|around|of)\s+([a-zA-Z\s,]+)",
         r"(?:in|at|for)\s+([a-zA-Z\s,]+)\s+(?:weather|forecast|rain|climate|temperature)",
@@ -83,7 +82,6 @@ def extract_place_from_prompt(prompt: str) -> Optional[str]:
             if cleaned and len(cleaned) >= 2:
                 return cleaned
 
-    # Fallback: remove syntax noise tokens and isolate place candidate
     noise = {"what", "is", "the", "weather", "forecast", "temp", "temperature", "rain", 
              "in", "at", "for", "how", "like", "today", "now", "tell", "me", "about"}
     words = [w.strip("?.!,") for w in text.split() if w.strip("?.!,").lower() not in noise]
@@ -101,7 +99,7 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
 
     clean_place = place.strip()
 
-    # Priority A: Google Geocoding API if key is present
+    # Priority A: Google Geocoding API if key configured
     if GOOGLE_MAPS_API_KEY:
         google_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_place}&key={GOOGLE_MAPS_API_KEY}"
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -118,11 +116,11 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
             except Exception:
                 pass
 
-    # Priority B: OpenStreetMap Nominatim Live Geocoder (Global & Keyless Fallback)
+    # Priority B: OpenStreetMap Nominatim Live Geocoder (Global & Keyless)
     osm_url = f"https://nominatim.openstreetmap.org/search?q={clean_place}&format=json&limit=1"
     async with httpx.AsyncClient(timeout=6.0) as client:
         try:
-            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.1"})
+            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.2"})
             if res.status_code == 200:
                 data = res.json()
                 if data and len(data) > 0:
@@ -135,10 +133,9 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
 
     return None
 
-# 5. Server-Side Reverse Geocoding Endpoint (Bypasses Browser CORS)
+# 5. Server-Side Reverse Geocoding Endpoint
 @app.get("/api/reverse-geocode")
 async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(...)):
-    # 1. Priority A: Google Reverse Geocoding via backend server
     if GOOGLE_MAPS_API_KEY:
         google_url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_MAPS_API_KEY}"
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -168,11 +165,10 @@ async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(.
             except Exception:
                 pass
 
-    # 2. Priority B: OpenStreetMap Nominatim Server-Side Fallback
     osm_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&zoom=16&addressdetails=1"
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.1"})
+            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.2"})
             if osm_res.status_code == 200:
                 addr = osm_res.json().get("address", {})
                 micro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("village") or addr.get("road")
@@ -243,7 +239,7 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
             }
         }
 
-# 7. Sun Copilot Dynamic Multi-Area Endpoint
+# 7. Sun Copilot Powered by Groq Llama 3.3 70B
 @app.post("/api/ai-query")
 @app.post("/api/copilot")
 async def copilot_intelligence(req: QueryRequest):
@@ -253,7 +249,6 @@ async def copilot_intelligence(req: QueryRequest):
     target_lon = req.lon
     target_name = "your current location"
 
-    # If the user typed a specific area, resolve target coordinates dynamically
     if queried_place:
         geocoded = await resolve_place_coordinates(queried_place)
         if geocoded:
@@ -266,59 +261,63 @@ async def copilot_intelligence(req: QueryRequest):
     except Exception as e:
         raise HTTPException(
             status_code=502, 
-            detail=f"Live meteorological telemetry unavailable for coordinates ({target_lat}, {target_lon}): {str(e)}"
+            detail=f"Live meteorological telemetry unavailable: {str(e)}"
         )
 
     cur = telemetry["current"]
 
-    # When Gemini API client is not configured, reply with direct telemetry
-    if not gemini_client or not GEMINI_API_KEY:
+    if not groq_client:
         return {
-            "reply": f"Current weather in {target_name}: {cur['condition']} at {cur['temp']}°C (High: {cur['max_temp']}°C, Low: {cur['min_temp']}°C) with {cur['humidity']}% humidity, {cur['wind']} km/h wind, and {cur['rain_prob']}% chance of rain.",
+            "reply": f"Live reading for {target_name}: {cur['condition']} at {cur['temp']}°C (High: {cur['max_temp']}°C / Low: {cur['min_temp']}°C), {cur['humidity']}% humidity, and {cur['wind']} km/h wind.",
             "telemetry": telemetry,
             "engine": "live_grid_telemetry"
         }
 
     system_instruction = (
-        "You are Sun Copilot, the live meteorological AI core for AtmosCopilot. "
-        "Answer weather questions directly, concisely, and factually without conversational filler. "
-        "You MUST base your response strictly on the live telemetry provided below. Do not use static templates."
+        "You are Sun Copilot, the sharp, authentic, and slightly witty AI meteorological co-pilot for AtmosCopilot. "
+        "Your mission is to provide accurate, real-world atmospheric analysis directly grounded in live numerical telemetry. "
+        "Rules:\n"
+        "1. Never give robotic boilerplate openings (avoid 'Sure!', 'Certainly', 'Here is the weather'). Dive straight into the answer.\n"
+        "2. Ground every response in the provided live telemetry (temperature, condition, humidity, wind, and rain probability).\n"
+        "3. Provide practical, contextual insights (umbrella necessity, transit advice, comfort/heat index) with light wit.\n"
+        "4. Keep answers concise, natural, and under 120 words."
     )
 
-    context_prompt = f"""
+    user_prompt = f"""
 [LIVE VERIFIED METEOROLOGICAL TELEMETRY]
 Target Locality: {target_name}
 Coordinates: {target_lat:.4f}°N, {target_lon:.4f}°E
-Current Temperature: {cur['temp']}°C (Forecast High: {cur['max_temp']}°C / Low: {cur['min_temp']}°C)
-Atmospheric Condition: {cur['condition']}
+Current Ambient Temp: {cur['temp']}°C (Forecast High: {cur['max_temp']}°C / Low: {cur['min_temp']}°C)
+Atmospheric State: {cur['condition']}
 Relative Humidity: {cur['humidity']}%
 Surface Wind Velocity: {cur['wind']} km/h
 Precipitation Rate: {cur['precipitation']} mm
 Precipitation Probability: {cur['rain_prob']}%
-Surface Pressure: {cur['pressure']} hPa
+Surface Barometric Pressure: {cur['pressure']} hPa
 
-User Question:
+User Inquiry:
 "{req.query}"
 """
 
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=context_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.1,
-                max_output_tokens=200
-            )
+        completion = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.25,
+            max_tokens=220
         )
         return {
-            "reply": response.text.strip(),
+            "reply": completion.choices[0].message.content.strip(),
             "telemetry": telemetry,
-            "engine": "gemini-2.5-flash"
+            "engine": "groq-llama-3.3-70b"
         }
-    except Exception:
+    except Exception as e:
+        print("Groq execution error:", e)
         return {
-            "reply": f"Current weather in {target_name}: {cur['condition']} at {cur['temp']}°C with {cur['humidity']}% humidity and {cur['wind']} km/h wind.",
+            "reply": f"Live observation for {target_name}: {cur['condition']} at {cur['temp']}°C with {cur['humidity']}% humidity, winds at {cur['wind']} km/h, and a {cur['rain_prob']}% chance of rain.",
             "telemetry": telemetry,
             "engine": "live_telemetry_fallback"
         }
@@ -331,7 +330,6 @@ async def get_weather_telemetry(
     city: Optional[str] = Query(default=None)
 ):
     if not city or city.startswith("annotation="):
-        # Auto-resolve city name through the reverse geocode pipeline
         resolved_info = await reverse_geocode_endpoint(lat=lat, lon=lon)
         target_name = resolved_info.get("city", f"{lat:.4f}°N, {lon:.4f}°E")
     else:
@@ -392,4 +390,4 @@ def reset_password(payload: ResetPasswordSchema):
 
 @app.get("/")
 def root():
-    return {"status": "online", "engine": "Dynamic Multi-Region Meteorological Core"}
+    return {"status": "online", "engine": "Groq Llama 3.3 70B Meteorological Core"}
