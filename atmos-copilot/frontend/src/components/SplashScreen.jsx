@@ -1,20 +1,19 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 
 export default function SplashScreen({ onFinish }) {
   const [fadingOut, setFadingOut] = useState(false);
 
   useEffect(() => {
-    // 1. Synthesize Atmospheric Audio Pulse at 1.5s mark
+    // 1. Audio synthesis at the 1.5s enlargement apex
     const soundTimer = setTimeout(() => {
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
         const ctx = new AudioContext();
 
-        // Sub-bass sweep
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = "sine";
+        osc.type = 'sine';
         osc.frequency.setValueAtTime(140, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(32, ctx.currentTime + 0.85);
 
@@ -22,10 +21,9 @@ export default function SplashScreen({ onFinish }) {
         gain.gain.exponentialRampToValueAtTime(0.7, ctx.currentTime + 0.05);
         gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.9);
 
-        // Harmonic shimmer
         const shimmer = ctx.createOscillator();
         const shimmerGain = ctx.createGain();
-        shimmer.type = "triangle";
+        shimmer.type = 'triangle';
         shimmer.frequency.setValueAtTime(580, ctx.currentTime);
         shimmer.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.25);
         shimmer.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.7);
@@ -44,42 +42,42 @@ export default function SplashScreen({ onFinish }) {
         osc.stop(ctx.currentTime + 0.95);
         shimmer.stop(ctx.currentTime + 0.75);
       } catch (err) {
-        console.warn("Audio autoplay blocked:", err);
+        console.warn("Audio autoplay restricted:", err);
       }
     }, 1500);
 
-    // 2. Start smooth fade-out at 4.2s
+    // 2. Begin fade out at 4.2s
     const fadeTimer = setTimeout(() => {
       setFadingOut(true);
     }, 4200);
 
-    // 3. Completely exit splash screen at 5.0s
-    const completeTimer = setTimeout(() => {
+    // 3. Dismount and transition to app at 5.0s
+    const exitTimer = setTimeout(() => {
       if (onFinish) onFinish();
     }, 5000);
 
     return () => {
       clearTimeout(soundTimer);
       clearTimeout(fadeTimer);
-      clearTimeout(completeTimer);
+      clearTimeout(exitTimer);
     };
   }, [onFinish]);
 
   return (
     <div
       style={{
-        position: "fixed",
+        position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        background: "#030712",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-        transition: "opacity 0.8s ease, transform 0.8s ease",
+        background: '#030712',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        transition: 'opacity 0.8s ease, transform 0.8s ease',
         opacity: fadingOut ? 0 : 1,
-        transform: fadingOut ? "scale(1.04)" : "scale(1)",
-        pointerEvents: fadingOut ? "none" : "auto",
+        transform: fadingOut ? 'scale(1.04)' : 'scale(1)',
+        pointerEvents: fadingOut ? 'none' : 'auto',
       }}
     >
       <style>{`
@@ -129,15 +127,15 @@ export default function SplashScreen({ onFinish }) {
         }
       `}</style>
 
-      <div style={{ width: "100%", maxWidth: "600px" }}>
+      <div style={{ width: '100%', maxWidth: '600px' }}>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 540 120"
           style={{
-            width: "100%",
-            height: "auto",
-            display: "block",
-            filter: "drop-shadow(0 20px 35px rgba(2, 132, 199, 0.3))",
+            width: '100%',
+            height: 'auto',
+            display: 'block',
+            filter: 'drop-shadow(0 20px 35px rgba(2, 132, 199, 0.3))',
           }}
         >
           <defs>
