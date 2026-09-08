@@ -1,24 +1,23 @@
 import React, { useEffect } from 'react';
-import { motion } from 'framer-motion';
 
 export default function SplashScreen({ onFinish }) {
   useEffect(() => {
-    // Guarantees dismissal after 1.5s regardless of network or device state
+    // Force transition after 800ms without blocking on any network or GPS calls
     const timer = setTimeout(() => {
-      if (onFinish) onFinish();
-    }, 1500);
+      if (typeof onFinish === 'function') {
+        onFinish();
+      }
+    }, 800);
 
     return () => clearTimeout(timer);
   }, [onFinish]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#050811] text-white p-4 select-none">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="flex flex-col items-center text-center space-y-4"
-      >
+    <div 
+      onClick={() => onFinish && onFinish()} 
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#050811] text-white p-4 cursor-pointer select-none"
+    >
+      <div className="flex flex-col items-center text-center space-y-4">
         <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/20">
           <span className="text-3xl animate-pulse">☀️</span>
         </div>
@@ -31,13 +30,14 @@ export default function SplashScreen({ onFinish }) {
           Voice-First Multilingual Assistant for Hyper-Local Weather Intelligence
         </p>
 
-        {/* Loading indicator */}
         <div className="flex gap-1.5 pt-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" style={{ animationDelay: '200ms' }} />
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" style={{ animationDelay: '400ms' }} />
         </div>
-      </motion.div>
+
+        <span className="text-[10px] text-slate-600 font-mono pt-4">Click anywhere to skip</span>
+      </div>
     </div>
   );
 }
