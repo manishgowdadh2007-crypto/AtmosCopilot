@@ -16,3 +16,11 @@
   transform: rotate(15deg);
   animation: floatParticle 3.5s linear infinite;
 }
+/* MotionSites 3D Interactive Perspective Layer */
+* {
+  transform-style: preserve-3d;
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
