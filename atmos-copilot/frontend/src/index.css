@@ -13,8 +13,3 @@ body,
   color: #f8fafc;
   overflow: hidden;
 }
-
-/* Scoped 3D Perspective Class (Applied ONLY where needed, NEVER on *) */
-.perspective-container {
-  perspective: 1000px;
-}
