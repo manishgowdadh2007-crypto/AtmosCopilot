@@ -41,55 +41,41 @@ export const fetchIPFallbackLocation = async () => {
   return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
 };
 
-// 2. High-Precision Micro-Locality Reverse Geocoding
+// 2. High-Precision Micro-Locality Reverse Geocoding (Backend Server-Side & OSM Fallback)
 export const reverseGeocodeCoordinates = async (lat, lon) => {
+  // 1. Call your backend reverse geocoder (bypasses browser CORS)
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_KEY}`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timeoutId);
-
-    const data = await res.json();
-    if (data.results && data.results[0]) {
-      let sublocality = "";
-      let locality = "";
-      for (const comp of data.results[0].address_components) {
-        if (comp.types.includes("sublocality") || comp.types.includes("sublocality_level_1") || comp.types.includes("neighborhood")) {
-          sublocality = comp.long_name;
-        }
-        if (comp.types.includes("locality")) {
-          locality = comp.long_name;
-        }
+    const res = await fetch(`${BASE_URL}/reverse-geocode?lat=${lat}&lon=${lon}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.city && !data.city.includes("IPD Salappa")) {
+        return data.city;
       }
-      if (sublocality && locality) {
-        return `${sublocality}, ${locality}`;
-      }
-      return data.results[0].formatted_address.split(",").slice(0, 2).join(",").trim();
     }
   } catch (err) {
-    console.warn("Google Geocode lookup failed, falling back to OSM Nominatim:", err);
-    try {
-      const osmRes = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=18&addressdetails=1`,
-        { headers: { "Accept-Language": "en" } }
-      );
-      if (osmRes.ok) {
-        const osmData = await osmRes.json();
-        const addr = osmData.address || {};
-        const micro = addr.suburb || addr.neighbourhood || addr.quarter || addr.road || "";
-        const major = addr.city || addr.town || addr.municipality || "";
-        if (micro && major) return `${micro}, ${major}`;
-        if (major) return major;
-      }
-    } catch {
-      // Nominal fallback handled below
-    }
+    console.warn("Backend reverse geocode failed, attempting direct OSM:", err);
   }
-  return "IPD Salappa Ward, Bengaluru";
+
+  // 2. Direct browser-safe OSM reverse geocoding fallback
+  try {
+    const osmRes = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=16&addressdetails=1`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    if (osmRes.ok) {
+      const osmData = await osmRes.json();
+      const addr = osmData.address || {};
+      const micro = addr.suburb || addr.neighbourhood || addr.village || addr.road || "";
+      const major = addr.city || addr.town || addr.county || addr.state_district || "";
+      if (micro && major) return `${micro}, ${major}`;
+      if (major) return major;
+      if (osmData.display_name) return osmData.display_name.split(",").slice(0, 2).join(",");
+    }
+  } catch (e) {
+    console.warn("OSM fallback failed:", e);
+  }
+
+  return `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
 };
 
 // 3. User Authentication Protocols
@@ -158,7 +144,7 @@ export const fetchWeatherTelemetry = async (lat, lon, knownCity = null) => {
   try {
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const meteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,surface_pressure,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto`;
-    
+
     const meteoRes = await fetch(meteoUrl);
     if (meteoRes.ok) {
       const data = await meteoRes.json();
@@ -197,7 +183,7 @@ export const fetchWeatherTelemetry = async (lat, lon, knownCity = null) => {
       return {
         latitude: lat,
         longitude: lon,
-        resolved_city: knownCity || "IPD Salappa Ward, Bengaluru",
+        resolved_city: knownCity || `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`,
         current: {
           temp,
           condition: mapWmoCode(current.weather_code ?? 0),
@@ -221,7 +207,7 @@ export const fetchWeatherTelemetry = async (lat, lon, knownCity = null) => {
   return {
     latitude: lat,
     longitude: lon,
-    resolved_city: knownCity || "IPD Salappa Ward, Bengaluru",
+    resolved_city: knownCity || `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`,
     current: {
       temp: 28,
       condition: "Clear",
