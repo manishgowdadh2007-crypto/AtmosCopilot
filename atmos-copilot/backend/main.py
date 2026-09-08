@@ -10,7 +10,7 @@ import httpx
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AtmosCopilot Dynamic Telemetry Engine", version="2.0.0")
+app = FastAPI(title="AtmosCopilot Dynamic Telemetry Engine", version="2.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,7 +94,7 @@ def extract_place_from_prompt(prompt: str) -> Optional[str]:
 
     return None
 
-# 4. Live Geocoding for Any Arbitrary Place Name
+# 4. Live Forward Geocoding for Any Arbitrary Place Name
 async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
     if not place:
         return None
@@ -122,7 +122,7 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
     osm_url = f"https://nominatim.openstreetmap.org/search?q={clean_place}&format=json&limit=1"
     async with httpx.AsyncClient(timeout=6.0) as client:
         try:
-            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.0"})
+            res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.1"})
             if res.status_code == 200:
                 data = res.json()
                 if data and len(data) > 0:
@@ -135,7 +135,58 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
 
     return None
 
-# 5. Fetch Live Open-Meteo Grid Telemetry for Exact Lat/Lon Coordinates
+# 5. Server-Side Reverse Geocoding Endpoint (Bypasses Browser CORS)
+@app.get("/api/reverse-geocode")
+async def reverse_geocode_endpoint(lat: float = Query(...), lon: float = Query(...)):
+    # 1. Priority A: Google Reverse Geocoding via backend server
+    if GOOGLE_MAPS_API_KEY:
+        google_url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_MAPS_API_KEY}"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                res = await client.get(google_url)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("results"):
+                        first_res = data["results"][0]
+                        sublocality, locality, district, state = "", "", "", ""
+                        for comp in first_res.get("address_components", []):
+                            types = comp.get("types", [])
+                            if any(k in types for k in ["sublocality", "sublocality_level_1", "neighborhood"]):
+                                sublocality = comp.get("long_name", "")
+                            if "locality" in types:
+                                locality = comp.get("long_name", "")
+                            if "administrative_area_level_2" in types:
+                                district = comp.get("long_name", "")
+                            if "administrative_area_level_1" in types:
+                                state = comp.get("long_name", "")
+                        
+                        primary = sublocality or locality or district
+                        secondary = locality if primary != locality else (district or state)
+                        if primary and secondary:
+                            return {"city": f"{primary}, {secondary}"}
+                        return {"city": first_res.get("formatted_address", "").split(",")[0]}
+            except Exception:
+                pass
+
+    # 2. Priority B: OpenStreetMap Nominatim Server-Side Fallback
+    osm_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&zoom=16&addressdetails=1"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            osm_res = await client.get(osm_url, headers={"User-Agent": "AtmosCopilot/2.1"})
+            if osm_res.status_code == 200:
+                addr = osm_res.json().get("address", {})
+                micro = addr.get("suburb") or addr.get("neighbourhood") or addr.get("village") or addr.get("road")
+                macro = addr.get("city") or addr.get("town") or addr.get("county") or addr.get("state_district")
+                if micro and macro:
+                    return {"city": f"{micro}, {macro}"}
+                if macro:
+                    return {"city": macro}
+        except Exception:
+            pass
+
+    return {"city": f"{lat:.4f}°N, {lon:.4f}°E"}
+
+# 6. Fetch Live Open-Meteo Grid Telemetry for Exact Lat/Lon Coordinates
 async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str) -> dict:
     meteo_url = (
         f"https://api.open-meteo.com/v1/forecast?"
@@ -192,7 +243,7 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
             }
         }
 
-# 6. Sun Copilot Dynamic Multi-Area Endpoint
+# 7. Sun Copilot Dynamic Multi-Area Endpoint
 @app.post("/api/ai-query")
 @app.post("/api/copilot")
 async def copilot_intelligence(req: QueryRequest):
@@ -272,17 +323,23 @@ User Question:
             "engine": "live_telemetry_fallback"
         }
 
-# 7. Standard Telemetry Endpoint
+# 8. Standard Telemetry Endpoint
 @app.get("/api/weather-telemetry")
 async def get_weather_telemetry(
     lat: float = Query(...),
     lon: float = Query(...),
     city: Optional[str] = Query(default=None)
 ):
-    target_name = city or "Current Station"
+    if not city or city.startswith("annotation="):
+        # Auto-resolve city name through the reverse geocode pipeline
+        resolved_info = await reverse_geocode_endpoint(lat=lat, lon=lon)
+        target_name = resolved_info.get("city", f"{lat:.4f}°N, {lon:.4f}°E")
+    else:
+        target_name = city
+
     return await fetch_live_grid_telemetry(lat, lon, target_name)
 
-# 8. User Auth Endpoints
+# 9. User Auth Endpoints
 @app.post("/api/register", status_code=status.HTTP_201_CREATED)
 def register(user: RegisterSchema):
     if not re.match(r"^[a-zA-Z\s]+$", user.name):
