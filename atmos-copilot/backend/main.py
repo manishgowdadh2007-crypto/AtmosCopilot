@@ -9,12 +9,13 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.2.0")
+app = FastAPI(title="AtmosCopilot Groq Intelligence Engine", version="2.2.1")
 
+# Standard-compliant CORS: allow wildcard origins when allow_credentials is False to eliminate browser ERR_FAILED blocks
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -188,6 +189,7 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}"
         f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m"
+        f"&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,surface_pressure,wind_speed_10m"
         f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"
         f"&timezone=auto"
     )
@@ -208,7 +210,8 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
         res.raise_for_status()
         data = res.json()
         current = data.get("current", {})
-        daily = data.get("daily", {})
+        daily_raw = data.get("daily", {})
+        hourly_raw = data.get("hourly", {})
 
         cur_temp = round(current.get("temperature_2m", 0))
         cur_humidity = round(current.get("relative_humidity_2m", 0))
@@ -217,9 +220,47 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
         cur_pressure = round(current.get("surface_pressure", 1013))
         cur_condition = wmo_to_condition(current.get("weather_code", 0))
 
-        max_temp = round(daily.get("temperature_2m_max", [cur_temp])[0])
-        min_temp = round(daily.get("temperature_2m_min", [cur_temp])[0])
-        rain_prob = daily.get("precipitation_probability_max", [0])[0]
+        max_temp = round(daily_raw.get("temperature_2m_max", [cur_temp])[0])
+        min_temp = round(daily_raw.get("temperature_2m_min", [cur_temp])[0])
+        rain_prob = daily_raw.get("precipitation_probability_max", [0])[0]
+
+        # Extract synchronized hourly projections for the frontend diurnal curve
+        current_hour = datetime.now().hour
+        hourly = []
+        times = hourly_raw.get("time", [])
+        for i in range(current_hour, min(current_hour + 24, len(times)), 3):
+            try:
+                date_obj = datetime.fromisoformat(times[i])
+                hr = date_obj.hour
+                label = "12 am" if hr == 0 else "12 pm" if hr == 12 else f"{hr - 12} pm" if hr > 12 else f"{hr} am"
+            except Exception:
+                label = f"{i % 24}:00"
+
+            hourly.append({
+                "time": label,
+                "temp": round(hourly_raw.get("temperature_2m", [26] * len(times))[i]),
+                "precip": round(hourly_raw.get("precipitation_probability", [0] * len(times))[i]),
+                "wind": round(hourly_raw.get("wind_speed_10m", [10] * len(times))[i])
+            })
+
+        # Generate 7-day daily forecast structure
+        day_labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        daily = []
+        daily_times = daily_raw.get("time", [])
+        for idx, dt in enumerate(daily_times[:7]):
+            try:
+                d_obj = datetime.fromisoformat(dt)
+                day_name = "Today" if idx == 0 else day_labels[d_obj.weekday()]
+            except Exception:
+                day_name = "Today" if idx == 0 else f"Day {idx + 1}"
+
+            daily.append({
+                "day": day_name,
+                "max_temp": round(daily_raw.get("temperature_2m_max", [30])[idx]),
+                "min_temp": round(daily_raw.get("temperature_2m_min", [20])[idx]),
+                "condition": wmo_to_condition(daily_raw.get("weather_code", [0])[idx]),
+                "chance_of_rain": round(daily_raw.get("precipitation_probability_max", [0])[idx])
+            })
 
         return {
             "resolved_city": location_label,
@@ -236,7 +277,9 @@ async def fetch_live_grid_telemetry(lat: float, lon: float, location_label: str)
                 "max_temp": max_temp,
                 "min_temp": min_temp,
                 "rain_prob": rain_prob
-            }
+            },
+            "hourly": hourly,
+            "daily": daily
         }
 
 # 7. Sun Copilot Powered by Groq Llama 3.3 70B
