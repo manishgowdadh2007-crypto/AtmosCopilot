@@ -3,21 +3,37 @@ import re
 import sqlite3
 from typing import Optional, Tuple
 from datetime import datetime
-from fastapi import FastAPI, Query, HTTPException, status
+from fastapi import FastAPI, Query, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.1")
+app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.2")
 
+# Explicit, permissive CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Ensure CORS headers are appended even when HTTPExceptions are thrown
+@app.exception_handler(HTTPException)
+async def http_exception_cors_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
 
 def init_db():
     conn = sqlite3.connect("atmos_users.db")
@@ -63,7 +79,6 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
         return None
 
     clean_place = place.strip().strip("?.!,")
-    # Handle common misspellings or regional names
     typo_map = {
         "chenni": "Chennai",
         "chenai": "Chennai",
@@ -190,7 +205,6 @@ async def copilot_intelligence(req: QueryRequest):
     target_lon = req.lon
     target_name = "User Location"
 
-    # Robust regex location matching covering typos like "wether in..."
     candidate = None
     place_match = re.search(r"(?:in|at|for|near|around)\s+([a-zA-Z\s]+)", prompt_text, re.IGNORECASE)
     if place_match:
