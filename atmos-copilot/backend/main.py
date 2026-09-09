@@ -10,9 +10,9 @@ from pydantic import BaseModel
 import httpx
 from groq import Groq
 
-app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.2")
+app = FastAPI(title="AtmosCopilot Dynamic Meteorological Intelligence Engine", version="2.5.3")
 
-# Explicit, permissive CORS configuration
+# Universal CORS Middleware Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,7 +22,16 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Ensure CORS headers are appended even when HTTPExceptions are thrown
+# Explicit OPTIONS Catch-All Handler (Resolves browser preflight net::ERR_FAILED)
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    response = JSONResponse(content={"status": "preflight_ok"})
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+# Handle validation/HTTP exceptions while maintaining CORS headers
 @app.exception_handler(HTTPException)
 async def http_exception_cors_handler(request: Request, exc: HTTPException):
     return JSONResponse(
@@ -73,7 +82,7 @@ class ResetPasswordSchema(BaseModel):
     phone: str
     new_password: str
 
-# Robust worldwide city resolver using wttr.in coordinate lookup
+# Geocoding Engine
 async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, str]]:
     if not place:
         return None
@@ -88,10 +97,8 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
         "davangere": "Davanagere"
     }
     target_query = typo_map.get(clean_place.lower(), clean_place)
-
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AtmosCopilot/3.5"}
-    
-    # 1. Primary geocoder via Open-Meteo search
+
     try:
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={target_query}&count=1&language=en&format=json"
         async with httpx.AsyncClient(timeout=6.0) as client:
@@ -104,7 +111,6 @@ async def resolve_place_coordinates(place: str) -> Optional[Tuple[float, float, 
     except Exception as e:
         print("Geocoding primary failed:", e)
 
-    # 2. Direct coordinate lookup via wttr.in
     try:
         wttr_url = f"https://wttr.in/{target_query}?format=j1"
         async with httpx.AsyncClient(timeout=6.0) as client:
