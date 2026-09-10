@@ -160,7 +160,7 @@ export default function App() {
             lon: parseFloat(ipLoc.lon.toFixed(4))
           };
           setCoords(userCoords);
-          syncTelemetryLocation(userCoords.lat, userCoords.lon, ipLoc.city);
+          await syncTelemetryLocation(userCoords.lat, userCoords.lon, ipLoc.city);
           return;
         }
       } catch (err) {
@@ -175,19 +175,23 @@ export default function App() {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const accurate = {
           lat: parseFloat(pos.coords.latitude.toFixed(4)),
           lon: parseFloat(pos.coords.longitude.toFixed(4)),
         };
         setCoords(accurate);
-        syncTelemetryLocation(accurate.lat, accurate.lon);
+        await syncTelemetryLocation(accurate.lat, accurate.lon);
       },
       (err) => {
-        console.warn("Hardware GPS lock unavailable, using IP network resolution:", err.message);
+        console.warn("Hardware GPS lock error:", err.message);
         fallbackToVisitorIP();
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+      { 
+        enableHighAccuracy: true, 
+        timeout: 15000, 
+        maximumAge: 0 // Force fresh reading; never use cached coordinates
+      }
     );
   };
 
