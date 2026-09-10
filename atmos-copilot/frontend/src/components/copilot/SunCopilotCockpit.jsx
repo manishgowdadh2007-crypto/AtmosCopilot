@@ -1,288 +1,1079 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Volume2, VolumeX, Copy, Check, Sparkles, Navigation, 
-  Droplets, Wind, CloudRain, Sun, Activity, ShieldAlert
+  Bell, AlertTriangle, CloudRain, Wind, History, Trash2, 
+  Settings, LogOut, User, Mail, Phone, Clock, ShieldCheck, CheckCircle2,
+  Sun, Moon, Volume2, Play, Square, Check, Mic, Activity, Sliders, AudioLines 
 } from 'lucide-react';
-import SunAvatar from './SunAvatar';
 
-const PERSONAS = [
+import SatelliteView from './components/home/SatelliteView';
+import SunCopilotCockpit from './components/copilot/SunCopilotCockpit';
+import EnvironmentalPanel from './components/home/EnvironmentalPanel';
+import AgriAdvisoryView from './components/home/AgriAdvisoryView';
+import RoutePlannerView from './components/home/RoutePlannerView';
+import DisasterView from './components/home/DisasterView';
+import ClimateIntelView from './components/home/ClimateIntelView';
+import Header from './components/common/Header';
+import SplashScreen from './components/onboarding/SplashScreen';
+import AuthModal from './components/onboarding/AuthModal';
+import { translations, formatNativeNumber } from './utils/translations';
+import { 
+  fetchWeatherTelemetry, 
+  reverseGeocodeCoordinates, 
+  sendAIChatQuery, 
+  fetchEnvironmentalTelemetry,
+  fetchIPFallbackLocation 
+} from './services/api';
+
+// Centralized Voice Definitions with acoustic parameters
+const VOICE_CATALOG = [
   {
-    id: 'meteorologist',
-    title: 'Meteorologist',
-    badge: 'SYNOPTIC CORE',
-    desc: 'Atmospheric fronts, barometric trends, dew point depression & diurnal swings'
+    id: 'in-female',
+    name: 'Indian English (Female)',
+    locale: 'en-IN',
+    gender: 'Female',
+    pitch: 1.15,
+    rate: 1.0,
+    accent: 'Indo-Aryan Standard',
+    sample: 'Greetings Operator. Sun Copilot feminine synoptic core initialized.'
   },
   {
-    id: 'highway',
-    title: 'Highway & Commute',
-    badge: 'PAVEMENT & ROADS',
-    desc: 'Aquaplaning risk, surface visibility, braking distance & vector gusts'
+    id: 'in-male',
+    name: 'Indian English (Male)',
+    locale: 'en-IN',
+    gender: 'Male',
+    pitch: 0.90,
+    rate: 1.0,
+    accent: 'Indo-Aryan Tactical',
+    sample: 'Station online. Sun Copilot Indian male advisory reporting.'
   },
   {
-    id: 'agro',
-    title: 'Agro & Farming',
-    badge: 'SOIL & SPRAYS',
-    desc: 'Evapotranspiration rate, spray drift index & dew point leaf wetness'
+    id: 'us-female',
+    name: 'American English (Female)',
+    locale: 'en-US',
+    gender: 'Female',
+    pitch: 1.0,
+    rate: 1.0,
+    accent: 'General American Natural',
+    sample: 'Hello Operator. Sun Copilot standard defense telemetry synchronized.'
   },
   {
-    id: 'fitness',
-    title: 'Outdoor & Fitness',
-    badge: 'BIOMETRICS & RUN',
-    desc: 'Thermal strain, UV exposure threshold, hydration demand & air density'
+    id: 'us-male',
+    name: 'American English (Male)',
+    locale: 'en-US',
+    gender: 'Male',
+    pitch: 0.85,
+    rate: 0.98,
+    accent: 'General American Low',
+    sample: 'Terminal lock established. Sun Copilot tactical US unit active.'
   }
 ];
 
-export default function SunCopilotCockpit({ 
-  weather, 
-  coords, 
-  messages, 
-  onSendMessage, 
-  isLoading,
-  isListening,
-  setIsListening
-}) {
-  const [activePersona, setActivePersona] = useState('meteorologist');
-  const [voiceProfile, setVoiceProfile] = useState('indian-female');
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [inputVal, setInputVal] = useState('');
-  const [copiedIdx, setCopiedIdx] = useState(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const chatBottomRef = useRef(null);
+export default function App() {
+  const savedUser = (() => {
+    try {
+      const saved = localStorage.getItem('atmos_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  })();
 
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+  const [user, setUser] = useState(savedUser);
+  const [stage, setStage] = useState(() => {
+    return sessionStorage.getItem('atmos_splash_shown') ? 'app' : 'splash';
+  });
+  const [currentPage, setCurrentPage] = useState('home');
+  const [coords, setCoords] = useState(null);
 
-  // Web Speech API: Voice Synthesis Engine
-  const speakText = (text) => {
-    if (isAudioMuted || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
+  // Acoustic Voice Synthesizer States
+  const [activeVoiceId, setActiveVoiceId] = useState(() => localStorage.getItem('atmos_voice_id') || 'in-female');
+  const [auditioningId, setAuditioningId] = useState(null);
 
-    // Clean markdown symbols before speaking
-    const cleanText = text.replace(/[*#_`]/g, '').trim();
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const voices = window.speechSynthesis.getVoices();
+  const activeVoiceMeta = VOICE_CATALOG.find((v) => v.id === activeVoiceId) || VOICE_CATALOG[0];
 
-    if (voiceProfile === 'indian-female') {
-      utterance.voice = voices.find(v => v.lang.includes('en-IN') && (v.name.includes('Heera') || v.name.includes('Neerja') || v.name.includes('Female') || v.name.includes('Google हिन्दी'))) || voices.find(v => v.lang.includes('en-IN'));
-      utterance.pitch = 1.1;
-    } else if (voiceProfile === 'indian-male') {
-      utterance.voice = voices.find(v => v.lang.includes('en-IN') && (v.name.includes('Ravi') || v.name.includes('Male') || !v.name.includes('Female'))) || voices.find(v => v.lang.includes('en-IN'));
-      utterance.pitch = 0.95;
-    } else {
-      utterance.voice = voices.find(v => v.lang.includes('en-US') && (v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google US')));
-      utterance.pitch = 1.0;
+  const handleAuditionVoice = (voiceItem) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    if (auditioningId === voiceItem.id) {
+      window.speechSynthesis.cancel();
+      setAuditioningId(null);
+      return;
     }
 
-    utterance.rate = 1.02;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.cancel();
+    setAuditioningId(voiceItem.id);
+
+    const utterance = new SpeechSynthesisUtterance(voiceItem.sample);
+    const voices = window.speechSynthesis.getVoices();
+    
+    const matches = voices.filter((v) => v.lang.replace('_', '-').includes(voiceItem.locale));
+    if (voiceItem.gender === 'Female') {
+      utterance.voice = matches.find((v) => /female|zira|samantha|veena|heera|neerja/i.test(v.name)) || matches[0];
+    } else {
+      utterance.voice = matches.find((v) => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matches[0];
+    }
+
+    utterance.pitch = voiceItem.pitch;
+    utterance.rate = voiceItem.rate;
+
+    utterance.onend = () => setAuditioningId(null);
+    utterance.onerror = () => setAuditioningId(null);
 
     window.speechSynthesis.speak(utterance);
   };
 
-  const handleCopy = (idx, text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIdx(idx);
-    setTimeout(() => setCopiedIdx(null), 2000);
+  const handleSaveVoice = (voiceId) => {
+    setActiveVoiceId(voiceId);
+    localStorage.setItem('atmos_voice_id', voiceId);
   };
 
-  const handleFormSubmit = (e) => {
-    e.preventDefault();
-    if (!inputVal.trim() || isLoading) return;
-    onSendMessage(inputVal);
-    setInputVal('');
+  const [weather, setWeather] = useState({
+    resolved_city: "Locating...",
+    latitude: 0,
+    longitude: 0,
+    current: { temp: 26, condition: "Partly Cloudy", precipitation: 0, humidity: 55, wind: 12, dew_point: 16 },
+    hourly: [
+      { time: "6 pm", temp: 26, precip: 0, wind: 12 },
+      { time: "9 pm", temp: 24, precip: 0, wind: 10 },
+      { time: "12 am", temp: 22, precip: 0, wind: 8 },
+      { time: "3 am", temp: 20, precip: 0, wind: 7 },
+      { time: "6 am", temp: 21, precip: 5, wind: 8 },
+      { time: "9 am", temp: 25, precip: 0, wind: 11 },
+      { time: "12 pm", temp: 28, precip: 0, wind: 14 },
+      { time: "3 pm", temp: 29, precip: 0, wind: 13 }
+    ],
+    daily: [
+      { day: "Today", max_temp: 30, min_temp: 20, condition: "Partly Cloudy", chance_of_rain: 10 },
+      { day: "Tue", max_temp: 29, min_temp: 20, condition: "Rain", chance_of_rain: 45 },
+      { day: "Wed", max_temp: 28, min_temp: 19, condition: "Rain", chance_of_rain: 50 },
+      { day: "Thu", max_temp: 30, min_temp: 20, condition: "Partly Cloudy", chance_of_rain: 20 },
+      { day: "Fri", max_temp: 31, min_temp: 21, condition: "Clear", chance_of_rain: 10 },
+      { day: "Sat", max_temp: 31, min_temp: 20, condition: "Clear", chance_of_rain: 10 },
+      { day: "Sun", max_temp: 30, min_temp: 20, condition: "Partly Cloudy", chance_of_rain: 15 }
+    ]
+  });
+
+  const [envData, setEnvData] = useState({
+    aqi: { value: 36, status: "Good", color: "emerald", pm25: 11, pm10: 15 },
+    uv: { index: 5.9, risk: "Moderate", burnTime: "35-45 min" },
+    agro: { soilMoisture: "22.6", vpd: "1.43" }
+  });
+
+  const [lang, setLang] = useState(() => localStorage.getItem('atmos_lang') || 'en');
+  const [theme, setTheme] = useState(() => localStorage.getItem('atmos_theme') || 'dark');
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [currentTime, setCurrentTime] = useState('');
+
+  useEffect(() => {
+    const updateLiveClock = () => {
+      const now = new Date();
+      setCurrentTime(
+        now.toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        })
+      );
+    };
+    updateLiveClock();
+    const interval = setInterval(updateLiveClock, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const [searchHistory, setSearchHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('atmos_search_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [isListening, setIsListening] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeMetric, setActiveMetric] = useState('temp');
+  const [isLocating, setIsLocating] = useState(false);
+  const [messages, setMessages] = useState([
+    { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
+  ]);
+
+  const t = translations[lang] || translations.en;
+
+  const handleLanguageChange = (newLang) => {
+    setLang(newLang);
+    localStorage.setItem('atmos_lang', newLang);
   };
 
-  const activePersonaObj = PERSONAS.find(p => p.id === activePersona);
+  const syncTelemetryLocation = async (lat, lon, knownCity = null) => {
+    try {
+      let resolvedPlace = knownCity;
+      if (!resolvedPlace || resolvedPlace.includes("°N") || resolvedPlace.includes("°E")) {
+        resolvedPlace = await reverseGeocodeCoordinates(lat, lon);
+      }
+
+      const [weatherData, environmentalData] = await Promise.all([
+        fetchWeatherTelemetry(lat, lon, resolvedPlace),
+        fetchEnvironmentalTelemetry(lat, lon)
+      ]);
+
+      if (weatherData) {
+        setWeather({
+          ...weatherData,
+          resolved_city: resolvedPlace || weatherData.resolved_city
+        });
+      }
+      if (environmentalData) {
+        setEnvData(environmentalData);
+      }
+    } catch (err) {
+      console.error("Telemetry sync error:", err);
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  const acquireAccuratePosition = () => {
+    if (isLocating) return;
+    setIsLocating(true);
+
+    const fallbackToVisitorIP = async () => {
+      try {
+        const ipLoc = await fetchIPFallbackLocation();
+        if (ipLoc && ipLoc.lat && ipLoc.lon) {
+          const userCoords = {
+            lat: parseFloat(ipLoc.lat.toFixed(4)),
+            lon: parseFloat(ipLoc.lon.toFixed(4))
+          };
+          setCoords(userCoords);
+          await syncTelemetryLocation(userCoords.lat, userCoords.lon, ipLoc.city);
+          return;
+        }
+      } catch (err) {
+        console.warn("Visitor IP Geolocation lookup failed:", err);
+      }
+      setIsLocating(false);
+    };
+
+    if (!navigator.geolocation) {
+      fallbackToVisitorIP();
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const accurate = {
+          lat: parseFloat(pos.coords.latitude.toFixed(4)),
+          lon: parseFloat(pos.coords.longitude.toFixed(4)),
+        };
+        setCoords(accurate);
+        await syncTelemetryLocation(accurate.lat, accurate.lon);
+      },
+      (err) => {
+        console.warn("Hardware GPS lock error:", err.message);
+        fallbackToVisitorIP();
+      },
+      { 
+        enableHighAccuracy: true, 
+        timeout: 15000, 
+        maximumAge: 0
+      }
+    );
+  };
+
+  useEffect(() => {
+    acquireAccuratePosition();
+  }, []);
+
+  const handleAuthorized = (retrievedCoords, userData) => {
+    if (userData) {
+      setUser(userData);
+      localStorage.setItem('atmos_user', JSON.stringify(userData));
+    }
+    setStage('app');
+    if (retrievedCoords) {
+      setCoords(retrievedCoords);
+      syncTelemetryLocation(retrievedCoords.lat, retrievedCoords.lon);
+    } else {
+      acquireAccuratePosition();
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('atmos_user');
+    setUser(null);
+    setStage('onboarding');
+    setCurrentPage('home');
+  };
+
+  const handleSendMessage = async (queryText) => {
+    if (!queryText.trim() || !coords) return;
+    const now = new Date();
+    const historyItem = {
+      query: queryText,
+      time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      date: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      location: weather?.resolved_city || "Current Location"
+    };
+
+    const updated = [historyItem, ...searchHistory.slice(0, 49)];
+    setSearchHistory(updated);
+    localStorage.setItem('atmos_search_history', JSON.stringify(updated));
+
+    setMessages((prev) => [...prev, { sender: 'user', text: queryText }]);
+    setIsLoading(true);
+    try {
+      const response = await sendAIChatQuery(queryText, coords.lat, coords.lon, weather);
+      setMessages((prev) => [...prev, { sender: 'ai', text: response.reply }]);
+    } catch {
+      setMessages((prev) => [...prev, { sender: 'ai', text: "Weather telemetry core offline. Re-establishing link..." }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearHistory = () => {
+    setSearchHistory([]);
+    localStorage.setItem('atmos_search_history', JSON.stringify([]));
+  };
+
+  if (stage === 'splash') {
+    return (
+      <SplashScreen 
+        onFinish={() => {
+          sessionStorage.setItem('atmos_splash_shown', 'true');
+          setStage(user ? 'app' : 'onboarding');
+        }} 
+      />
+    );
+  }
+
+  if (stage === 'onboarding') {
+    return <AuthModal onAuthorized={handleAuthorized} theme={theme} />;
+  }
+
+  const cur = {
+    temp: weather?.current?.temp ?? 26,
+    condition: weather?.current?.condition ?? "Partly Cloudy",
+    precipitation: weather?.current?.precipitation ?? 0,
+    humidity: weather?.current?.humidity ?? 55,
+    wind: weather?.current?.wind ?? 12,
+    dew_point: weather?.current?.dew_point ?? 16
+  };
+
+  const city = weather?.resolved_city || (isLocating ? t.acquiring : "Current Location");
+
+  const getSelectedDayHourly = () => {
+    const rawHourly = weather?.hourly || [];
+    if (selectedDayIndex === 0) {
+      if (rawHourly.length > 0) return rawHourly.slice(0, 8);
+      return [
+        { time: "6 pm", temp: cur.temp, precip: cur.precipitation, wind: cur.wind },
+        { time: "9 pm", temp: cur.temp - 2, precip: Math.max(0, cur.precipitation - 5), wind: Math.max(5, cur.wind - 2) },
+        { time: "12 am", temp: cur.temp - 4, precip: 0, wind: Math.max(5, cur.wind - 4) },
+        { time: "3 am", temp: cur.temp - 6, precip: 0, wind: Math.max(5, cur.wind - 5) },
+        { time: "6 am", temp: cur.temp - 6, precip: 5, wind: Math.max(5, cur.wind - 4) },
+        { time: "9 am", temp: cur.temp - 1, precip: 10, wind: cur.wind },
+        { time: "12 pm", temp: cur.temp + 3, precip: 15, wind: cur.wind + 2 },
+        { time: "3 pm", temp: cur.temp + 4, precip: 5, wind: cur.wind + 3 }
+      ];
+    }
+
+    const activeDay = weather?.daily?.[selectedDayIndex] || {};
+    const maxT = activeDay.max_temp ?? (cur.temp + 2);
+    const minT = activeDay.min_temp ?? (cur.temp - 6);
+    const dayRain = activeDay.chance_of_rain ?? 20;
+    const timeSlots = ["12 am", "3 am", "6 am", "9 am", "12 pm", "3 pm", "6 pm", "9 pm"];
+
+    return timeSlots.map((slot, idx) => {
+      const solarCycle = [0.1, 0.0, 0.05, 0.45, 0.9, 1.0, 0.7, 0.35];
+      const slotTemp = Math.round(minT + (maxT - minT) * solarCycle[idx]);
+      const slotPrecip = Math.max(0, Math.round(dayRain * (0.4 + solarCycle[idx] * 0.6)));
+      const slotWind = Math.round(8 + solarCycle[idx] * 8);
+
+      return {
+        time: slot,
+        temp: slotTemp,
+        precip: slotPrecip,
+        wind: slotWind
+      };
+    });
+  };
+
+  const activeHourlyData = getSelectedDayHourly();
+
+  const daily = weather?.daily?.length ? weather.daily : [
+    { day: t.today, max_temp: 31, min_temp: 21, condition: "Partly Cloudy", chance_of_rain: 10 },
+    { day: "Tue", max_temp: 31, min_temp: 20, condition: "Rain", chance_of_rain: 45 },
+    { day: "Wed", max_temp: 30, min_temp: 20, condition: "Rain", chance_of_rain: 50 },
+    { day: "Thu", max_temp: 31, min_temp: 20, condition: "Rain", chance_of_rain: 40 },
+    { day: "Fri", max_temp: 31, min_temp: 20, condition: "Rain", chance_of_rain: 35 },
+    { day: "Sat", max_temp: 32, min_temp: 20, condition: "Overcast", chance_of_rain: 20 },
+    { day: "Sun", max_temp: 31, min_temp: 20, condition: "Overcast", chance_of_rain: 15 }
+  ];
+
+  const renderWeatherSymbol = (cond = "") => {
+    const c = String(cond).toLowerCase();
+    if (c.includes("rain")) return "🌧️";
+    if (c.includes("cloud") || c.includes("overcast")) return "⛅";
+    if (c.includes("storm")) return "⛈️";
+    return "☀️";
+  };
+
+  const calculateRealCurve = (dataList, metric) => {
+    if (!dataList || dataList.length < 2) {
+      return { path: "M 0,70 L 800,70", area: "M 0,70 L 800,70 L 800,140 L 0,140 Z", coords: [], values: [] };
+    }
+
+    const rawValues = dataList.map((item) => {
+      if (metric === 'precip') return Number(item.precip ?? 0);
+      if (metric === 'wind') return Number(item.wind ?? 10);
+      return Number(item.temp ?? 25);
+    });
+
+    const minVal = Math.min(...rawValues);
+    const maxVal = Math.max(...rawValues);
+    const spread = maxVal - minVal === 0 ? 1 : maxVal - minVal;
+
+    const width = 800;
+    const height = 140;
+    const paddingY = 24;
+    const stepX = width / (rawValues.length - 1);
+
+    const calculatedCoords = rawValues.map((val, idx) => {
+      const x = idx * stepX;
+      const normalizedRatio = (val - minVal) / spread;
+      const y = (height - paddingY) - normalizedRatio * (height - paddingY * 2);
+      return { x, y, val };
+    });
+
+    let strokePath = `M ${calculatedCoords[0].x},${calculatedCoords[0].y}`;
+    for (let i = 0; i < calculatedCoords.length - 1; i++) {
+      const curPt = calculatedCoords[i];
+      const nextPt = calculatedCoords[i + 1];
+      const controlX = (curPt.x + nextPt.x) / 2;
+      strokePath += ` C ${controlX},${curPt.y} ${controlX},${nextPt.y} ${nextPt.x},${nextPt.y}`;
+    }
+
+    const areaPath = `${strokePath} L ${width},${height} L 0,${height} Z`;
+    return { path: strokePath, area: areaPath, coords: calculatedCoords, values: rawValues };
+  };
+
+  const { path: dynamicStroke, area: dynamicArea, coords: activeGraphPoints, values: activeGraphValues } = calculateRealCurve(activeHourlyData, activeMetric);
+
+  const cardBg = theme === 'dark' 
+    ? 'bg-[#0d1322]/80 border-slate-700/60 text-slate-100 shadow-2xl backdrop-blur-md' 
+    : 'bg-white/75 border-slate-300/80 text-slate-900 shadow-xl shadow-slate-900/10 backdrop-blur-md';
+
+  const subCardBg = theme === 'dark'
+    ? 'bg-[#080d1a]/80 border-slate-800/80 text-slate-300'
+    : 'bg-slate-100/80 border-slate-300/60 text-slate-800';
+
+  const headingText = theme === 'dark' ? 'text-white' : 'text-slate-900';
+  const subText = theme === 'dark' ? 'text-slate-400' : 'text-slate-600';
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col h-full overflow-hidden text-slate-100 select-none pb-2">
+    <div className="fixed inset-0 flex flex-col overflow-hidden font-sans select-none">
       
-      {/* 1. Header: Avatar & Audio Controls */}
-      <div className="flex flex-col items-center justify-center pt-2 pb-2 relative flex-shrink-0">
-        <div className="relative group cursor-pointer">
-          <SunAvatar isListening={isListening || isSpeaking} className="w-14 h-14" />
-          <Sparkles className="w-3.5 h-3.5 text-amber-300 absolute -top-1 -right-1 animate-pulse" />
-        </div>
+      {/* Global Background Video */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        onError={(e) => (e.currentTarget.style.display = 'none')}
+        className={`fixed inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-700 ${
+          theme === 'dark' 
+            ? 'opacity-70 filter brightness-105 contrast-110' 
+            : 'opacity-55 filter brightness-110 saturate-120'
+        }`}
+      >
+        <source src="/2611-865412751.mp4" type="video/mp4" />
+      </video>
 
-        {/* Mute & Voice Profile Switcher */}
-        <div className="flex items-center gap-3 mt-2 bg-slate-900/80 border border-slate-800/90 rounded-full px-3 py-1 backdrop-blur-md">
-          <button 
-            onClick={() => {
-              if (!isAudioMuted) window.speechSynthesis.cancel();
-              setIsAudioMuted(!isAudioMuted);
-            }} 
-            className="text-slate-400 hover:text-amber-400 transition"
-          >
-            {isAudioMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
-          </button>
-          
-          <div className="h-3 w-px bg-slate-700" />
+      {/* Atmospheric Blur Tint */}
+      <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
+        theme === 'dark'
+          ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/35 to-[#050811]/80'
+          : 'bg-gradient-to-b from-[#b8c7d9]/50 via-[#cdd8e6]/30 to-[#a8bbce]/60'
+      }`} />
 
-          <select 
-            value={voiceProfile} 
-            onChange={(e) => setVoiceProfile(e.target.value)}
-            className="bg-transparent text-[11px] font-mono text-amber-400/90 outline-none cursor-pointer"
-          >
-            <option value="indian-female" className="bg-slate-900 text-white">Indian English (Female)</option>
-            <option value="indian-male" className="bg-slate-900 text-white">Indian English (Male)</option>
-            <option value="american" className="bg-slate-900 text-white">American English</option>
-          </select>
-        </div>
+      {/* Header Bar */}
+      <div className="relative z-50 flex-shrink-0">
+        <Header 
+          weather={weather}
+          coords={coords}
+          user={user}
+          currentPage={currentPage} 
+          setCurrentPage={setCurrentPage} 
+          onLogout={handleLogout}
+          lang={lang}
+          theme={theme}
+          setTheme={setTheme}
+        />
       </div>
 
-      {/* 2. Persona Segmented Controls */}
-      <div className="flex-shrink-0 px-4 mb-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-1.5">
-          <span className="text-[10px] font-mono font-bold tracking-widest text-slate-400 uppercase">
-            Advisory Intelligence Persona:
-          </span>
-          <span className="text-[11px] font-mono text-slate-400 truncate">
-            {activePersonaObj.desc}
-          </span>
-        </div>
+      {/* Main Viewport */}
+      <main className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
+        {currentPage === 'home' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
+            <div className="max-w-7xl mx-auto space-y-6">
+              
+              {/* Station Banner & Met Matrix */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-xs uppercase tracking-widest text-amber-500 font-semibold font-mono">
+                          {t.liveTelemetryFeed}
+                        </span>
+                        <button
+                          onClick={acquireAccuratePosition}
+                          className="ml-2 text-[10px] text-amber-500 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition cursor-pointer"
+                        >
+                          {isLocating ? t.readingGps : t.refreshGps}
+                        </button>
+                      </div>
+                      <h2 className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight ${headingText}`}>{city}</h2>
+                      <p className={`text-xs mt-0.5 font-mono ${subText}`}>
+                        {t.hardwareGps}: {coords ? `${formatNativeNumber(coords.lat.toFixed(4), lang)}°N, ${formatNativeNumber(coords.lon.toFixed(4), lang)}°E` : t.acquiring}
+                      </p>
+                    </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {PERSONAS.map((p) => {
-            const isActive = activePersona === p.id;
-            return (
-              <button
-                key={p.id}
-                onClick={() => setActivePersona(p.id)}
-                className={`p-2.5 rounded-2xl border text-left transition-all duration-300 hover:-translate-y-0.5 active:scale-95 flex items-center justify-between ${
-                  isActive 
-                    ? 'bg-gradient-to-r from-sky-950/70 to-slate-900/90 border-sky-400/70 shadow-[0_0_15px_rgba(56,189,248,0.2)] ring-1 ring-sky-400/50' 
-                    : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-300'
-                }`}
-              >
-                <div>
-                  <div className="text-xs font-bold text-white tracking-tight">{p.title}</div>
-                  <div className="text-[9px] font-mono text-sky-400/90 tracking-wider font-semibold">{p.badge}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Live Ground Telemetry HUD Bar */}
-      <div className="flex-shrink-0 px-4 mb-3">
-        <div className="rounded-2xl border border-slate-800/90 bg-slate-950/70 backdrop-blur-xl p-3 shadow-lg">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-semibold text-white tracking-tight">
-                Live Ground Telemetry: <span className="text-sky-400 font-mono">{weather?.resolved_city || "Resolving Locality..."}</span>
-              </span>
-            </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-sky-950/80 border border-sky-400/40 text-sky-300 tracking-wider font-bold">
-              SYNOPTIC SYNCHRONIZED
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
-            <div className="p-1.5 rounded-xl bg-slate-900/60 border border-slate-800/60">
-              <div className="text-xs font-mono font-bold text-amber-400">{weather?.current?.temp ?? 25}°C</div>
-              <div className="text-[10px] text-slate-400 truncate">{weather?.current?.condition ?? "Clear"}</div>
-            </div>
-            <div className="p-1.5 rounded-xl bg-slate-900/60 border border-slate-800/60">
-              <div className="text-xs font-mono font-bold text-cyan-400">{weather?.current?.humidity ?? 60}% RH</div>
-              <div className="text-[10px] text-slate-400">Dew: {weather?.current?.dew_point ?? 18}°C</div>
-            </div>
-            <div className="p-1.5 rounded-xl bg-slate-900/60 border border-slate-800/60">
-              <div className="text-xs font-mono font-bold text-emerald-400">{weather?.current?.wind ?? 12} km/h</div>
-              <div className="text-[10px] text-slate-400">Surface Vector</div>
-            </div>
-            <div className="p-1.5 rounded-xl bg-slate-900/60 border border-slate-800/60">
-              <div className="text-xs font-mono font-bold text-indigo-400">{weather?.current?.precipitation ?? 0}%</div>
-              <div className="text-[10px] text-slate-400">Rain Probability</div>
-            </div>
-            <div className="p-1.5 rounded-xl bg-slate-900/60 border border-slate-800/60">
-              <div className="text-xs font-mono font-bold text-orange-400">UV 5.4</div>
-              <div className="text-[10px] text-slate-400">Photochemical</div>
-            </div>
-            <div className="p-1.5 rounded-xl bg-slate-900/60 border border-slate-800/60">
-              <div className="text-xs font-mono font-bold text-teal-400">24.5%</div>
-              <div className="text-[10px] text-slate-400">Soil Moisture</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Stream Conversation Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-3">
-        {messages.map((m, idx) => {
-          const isAI = m.sender === 'ai';
-          return (
-            <div key={idx} className={`flex ${isAI ? 'justify-start' : 'justify-end'} animate-fade-in`}>
-              <div className={`max-w-2xl rounded-2xl p-4 border backdrop-blur-xl transition-all duration-300 ${
-                isAI 
-                  ? 'bg-slate-950/80 border-slate-800/80 text-slate-200' 
-                  : 'bg-gradient-to-r from-sky-600 to-sky-500 border-sky-400/50 text-white shadow-lg shadow-sky-500/20'
-              }`}>
-                {isAI && (
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
-                    <span className="text-[10px] font-mono font-bold tracking-widest text-sky-400 uppercase flex items-center gap-1.5">
-                      <Sun className="w-3.5 h-3.5" /> METEOROLOGIST ADVISORY
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => speakText(m.text)}
-                        className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-amber-400 transition"
-                      >
-                        <Volume2 className="w-3.5 h-3.5" /> Vocalize
-                      </button>
-                      <button
-                        onClick={() => handleCopy(idx, m.text)}
-                        className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white transition"
-                      >
-                        {copiedIdx === idx ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                    <div className="flex flex-col items-end">
+                      <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
+                      <span className="text-xs font-mono font-bold text-amber-500 mt-2 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">
+                        {currentTime}
+                      </span>
                     </div>
                   </div>
-                )}
-                
-                <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-line font-sans">
-                  {m.text}
-                </p>
-              </div>
-            </div>
-          );
-        })}
 
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl p-3 bg-slate-950/80 border border-slate-800/80 text-sky-400 text-xs font-mono flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
-              Synthesizing meteorological model vectors...
+                  <div className="mt-8 flex flex-wrap items-end gap-6 sm:gap-10">
+                    <div className="flex items-baseline">
+                      <span className="text-6xl sm:text-7xl font-light tracking-tighter text-amber-500 font-mono">
+                        {formatNativeNumber(cur.temp, lang)}
+                      </span>
+                      <span className="text-2xl opacity-60 ml-1 font-medium">°C</span>
+                    </div>
+                    <div className="pb-1 text-sm font-medium">
+                      <div className={`text-lg font-semibold ${headingText}`}>{cur.condition}</div>
+                      <div className={`text-xs ${subText}`}>{t.precipitation}: {formatNativeNumber(cur.precipitation, lang)}%</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4 Corner Met Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.windVelocity}</span>
+                    <div className="my-2">
+                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.wind, lang)}</span>
+                      <span className={`text-xs ml-1 ${subText}`}>km/h</span>
+                    </div>
+                    <span className="text-[11px] text-emerald-500 font-medium">{t.surfaceVector}</span>
+                  </div>
+
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.relativeHumidity}</span>
+                    <div className="my-2">
+                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.humidity, lang)}</span>
+                      <span className={`text-xs ml-1 ${subText}`}>%</span>
+                    </div>
+                    <span className="text-[11px] text-cyan-500 font-medium">{t.atmosphericMoisture}</span>
+                  </div>
+
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.precipitation}</span>
+                    <div className="my-2">
+                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.precipitation, lang)}</span>
+                      <span className={`text-xs ml-1 ${subText}`}>%</span>
+                    </div>
+                    <span className="text-[11px] text-indigo-500 font-medium">{t.modelProbability}</span>
+                  </div>
+
+                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.dewPoint}</span>
+                    <div className="my-2">
+                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.dew_point, lang)}</span>
+                      <span className={`text-xs ml-1 ${subText}`}>°C</span>
+                    </div>
+                    <span className="text-[11px] text-amber-500 font-medium">{t.baseline}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Environmental Indices */}
+              <EnvironmentalPanel envData={envData} lang={lang} theme={theme} />
+
+              {/* Diurnal Trend Vector Graph */}
+              <div className={`border rounded-3xl p-6 backdrop-blur-xl space-y-4 ${cardBg}`}>
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3 ${
+                  theme === 'dark' ? 'border-slate-800' : 'border-slate-200'
+                }`}>
+                  <div>
+                    <h3 className={`text-base font-semibold ${headingText}`}>{t.diurnalTrendVectors}</h3>
+                    <p className={`text-xs font-mono ${subText}`}>
+                      {daily[selectedDayIndex]?.day || t.today} • {t.continuousProjection}
+                    </p>
+                  </div>
+                  <div className={`flex items-center gap-1.5 p-1 rounded-2xl border ${subCardBg}`}>
+                    {[
+                      { id: 'temp', label: t.temperature, unit: '°C' },
+                      { id: 'precip', label: t.precipitation, unit: '%' },
+                      { id: 'wind', label: t.wind, unit: 'km/h' }
+                    ].map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => setActiveMetric(m.id)}
+                        className={`px-3 py-1.5 text-xs rounded-xl font-medium transition cursor-pointer ${
+                          activeMetric === m.id
+                            ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                            : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="relative w-full h-40 pt-4 overflow-visible">
+                  <svg className="w-full h-full overflow-visible" viewBox="0 0 800 140" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="realGraphFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.45" />
+                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
+
+                    <path d={dynamicArea} fill="url(#realGraphFill)" />
+
+                    <path 
+                      d={dynamicStroke} 
+                      fill="none" 
+                      stroke="#fbbf24" 
+                      strokeWidth="3" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                    />
+
+                    {activeGraphPoints.map((pt, idx) => (
+                      <g key={idx}>
+                        <circle cx={pt.x} cy={pt.y} r="6" className="fill-[#0b101e] stroke-amber-400 stroke-2" />
+                        <circle cx={pt.x} cy={pt.y} r="2.5" className="fill-amber-300" />
+                      </g>
+                    ))}
+                  </svg>
+
+                  <div className="absolute inset-x-0 top-0 flex justify-between px-2 pointer-events-none font-mono text-xs font-bold">
+                    {activeGraphValues.map((num, i) => (
+                      <div key={i} className="flex flex-col items-center">
+                        <span className="text-amber-500 drop-shadow-md bg-[#050811]/70 px-1.5 py-0.5 rounded border border-amber-400/20">
+                          {formatNativeNumber(num, lang)}
+                          {activeMetric === 'temp' ? '°' : activeMetric === 'precip' ? '%' : 'k'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={`flex justify-between text-xs font-mono px-2 pt-2 border-t ${
+                  theme === 'dark' ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
+                }`}>
+                  {activeHourlyData.map((h, i) => (
+                    <span key={i} className="text-center">{h.time}</span>
+                  ))}
+                </div>
+              </div>
+
+              {/* 7-Day Synoptic Forecast */}
+              <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className={`text-base font-semibold ${headingText}`}>{t.synopticForecast}</h3>
+                  <span className="text-xs font-mono text-amber-500 font-semibold">
+                    {daily[selectedDayIndex]?.day}: {formatNativeNumber(daily[selectedDayIndex]?.max_temp, lang)}° / {formatNativeNumber(daily[selectedDayIndex]?.min_temp, lang)}°C
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+                  {daily.map((d, i) => {
+                    const isSelected = selectedDayIndex === i;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedDayIndex(i)}
+                        className={`flex flex-col items-center p-3.5 rounded-2xl border backdrop-blur-md transition text-left w-full active:scale-98 cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500/20 border-amber-500/50 shadow-lg shadow-amber-500/10 ring-1 ring-amber-400'
+                            : subCardBg
+                        }`}
+                      >
+                        <span className="text-xs font-medium text-slate-400">{d.day}</span>
+                        <span className="text-2xl my-2 drop-shadow">{renderWeatherSymbol(d.condition)}</span>
+                        <span className={`text-[11px] truncate max-w-full ${subText}`}>{d.condition}</span>
+                        <div className="mt-2 text-xs font-mono flex gap-1.5">
+                          <span className={`font-semibold ${headingText}`}>{formatNativeNumber(d.max_temp, lang)}°</span>
+                          <span className="opacity-60">{formatNativeNumber(d.min_temp, lang)}°</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
           </div>
         )}
-        <div ref={chatBottomRef} />
-      </div>
 
-      {/* 5. Command Input Bar */}
-      <div className="flex-shrink-0 px-4 pt-2">
-        <form onSubmit={handleFormSubmit} className="relative flex items-center">
-          <input
-            type="text"
-            value={inputVal}
-            onChange={(e) => setInputVal(e.target.value)}
-            placeholder="Inquire about thermal amplitudes, commute safety, or soil wetness..."
-            className="w-full bg-slate-950/90 border border-slate-800/90 rounded-2xl py-3 pl-4 pr-12 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-400/80 transition shadow-inner"
-          />
-          <button
-            type="submit"
-            disabled={!inputVal.trim() || isLoading}
-            className="absolute right-2 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition disabled:opacity-40"
-          >
-            Send
-          </button>
-        </form>
-      </div>
+        {currentPage === 'satellite' && (
+          <div className="w-full h-full flex-1 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
+            <SatelliteView coords={coords} weather={weather} theme={theme} />
+          </div>
+        )}
 
+        {currentPage === 'copilot' && (
+          <div className="w-full h-full flex-1 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
+            <SunCopilotCockpit
+              weather={weather}
+              coords={coords}
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              isListening={isListening}
+              setIsListening={setIsListening}
+              activeVoiceProfile={activeVoiceId}
+            />
+          </div>
+        )}
+
+        {currentPage === 'agri' && <AgriAdvisoryView coords={coords} weather={weather} theme={theme} />}
+        {currentPage === 'routes' && <RoutePlannerView coords={coords} weather={weather} lang={lang} theme={theme} />}
+        {currentPage === 'disaster' && <DisasterView coords={coords} weather={weather} theme={theme} />}
+        {currentPage === 'climate' && <ClimateIntelView coords={coords} weather={weather} theme={theme} />}
+
+        {currentPage === 'alerts' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
+            <div className="max-w-4xl mx-auto">
+              <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
+                <div className={`flex items-center justify-between border-b pb-4 mb-5 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-500">
+                      <Bell className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>{t.meteorologicalAdvisoriesAlerts}</h2>
+                      <p className={`text-xs ${subText}`}>{t.activeRegionalObservations} {city}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300">
+                  <h4 className="font-semibold text-sm">{t.surfaceRainRiskIndex}: {t.nominal}</h4>
+                  <p className="text-xs mt-1">{t.precipitation} is {formatNativeNumber(cur.precipitation, lang)}%.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentPage === 'history' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
+            <div className="max-w-4xl mx-auto">
+              <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
+                <div className={`flex items-center justify-between border-b pb-4 mb-5 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                      <History className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>{t.telemetryCopilotHistory}</h2>
+                      <p className={`text-xs ${subText}`}>{t.historySubtitle} ({searchHistory.length})</p>
+                    </div>
+                  </div>
+                  {searchHistory.length > 0 && (
+                    <button onClick={clearHistory} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition cursor-pointer">
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t.clearLog}</span>
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2.5">
+                  {searchHistory.map((item, idx) => (
+                    <div key={idx} className={`p-3.5 rounded-xl border flex items-center justify-between gap-4 ${subCardBg}`}>
+                      <div>
+                        <p className="text-xs font-medium">"{item.query}"</p>
+                        <span className={`text-[10px] block mt-0.5 ${subText}`}>{item.location}</span>
+                      </div>
+                      <span className="text-[11px] font-mono opacity-60">{item.time}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentPage === 'settings' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
+            <div className="max-w-3xl mx-auto space-y-5">
+              
+              {/* 1. Main Header Container */}
+              <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
+                <div className={`flex items-center justify-between border-b pb-4 mb-4 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                      <Settings className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>System Settings & Operator Profile</h2>
+                      <p className={`text-xs ${subText}`}>Manage device telemetry, vocal synthesis engine, and security status</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-mono font-medium">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>AUTHENTICATED</span>
+                  </div>
+                </div>
+
+                {/* 2. Display Mode Card */}
+                <div className={`p-4 rounded-2xl border mb-4 ${subCardBg}`}>
+                  <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>Display Mode / ಥೀಮ್</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => { setTheme('dark'); localStorage.setItem('atmos_theme', 'dark'); }}
+                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition cursor-pointer ${
+                        theme === 'dark' 
+                          ? 'bg-amber-500 text-slate-950 font-bold border-amber-500 shadow-md shadow-amber-500/20' 
+                          : 'border-slate-700 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <Moon className="w-4 h-4" /> Dark Mode
+                    </button>
+                    <button
+                      onClick={() => { setTheme('light'); localStorage.setItem('atmos_theme', 'light'); }}
+                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition cursor-pointer ${
+                        theme === 'light' 
+                          ? 'bg-amber-500 text-slate-950 font-bold border-amber-500 shadow-md shadow-amber-500/20' 
+                          : 'border-slate-300 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <Sun className="w-4 h-4" /> Light Mode
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. System Language Card */}
+                <div className={`p-4 rounded-2xl border mb-4 ${subCardBg}`}>
+                  <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>System Language / ಭಾಷೆ / भाषा</span>
+                  <select
+                    value={lang}
+                    onChange={(e) => handleLanguageChange(e.target.value)}
+                    className={`w-full text-xs p-3 rounded-xl outline-none border focus:border-amber-500 transition cursor-pointer ${
+                      theme === 'dark' ? 'bg-[#0d1322] border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  >
+                    <option value="en">English (Global)</option>
+                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    <option value="hi">हिन्दी (Hindi)</option>
+                    <option value="ta">தமிழ் (Tamil)</option>
+                    <option value="te">తెలుగు (Telugu)</option>
+                    <option value="es">Español (Spanish)</option>
+                  </select>
+                </div>
+
+                {/* 4. Dedicated Voice Synthesis Selection Card */}
+                <div className={`p-4 rounded-2xl border mb-4 ${subCardBg} space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Mic className="w-4 h-4 text-amber-500" />
+                      <span className={`text-xs font-bold tracking-tight ${headingText}`}>Sun Copilot Acoustic Synthesizer</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-semibold">
+                      ACTIVE: {activeVoiceMeta.gender.toUpperCase()}
+                    </span>
+                  </div>
+                  <p className={`text-[11px] ${subText}`}>
+                    Select an operational voice. Audition the audio sample with the play button prior to committing changes.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {VOICE_CATALOG.map((item) => {
+                      const isSelected = activeVoiceId === item.id;
+                      const isPlaying = auditioningId === item.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-500/60 text-white shadow-md shadow-amber-500/10'
+                              : 'bg-slate-950/40 border-slate-800/80 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold block truncate">{item.name}</span>
+                            <span className={`text-[10px] font-mono block ${subText}`}>{item.accent}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleAuditionVoice(item)}
+                              title="Audition Voice Demo"
+                              className={`p-2 rounded-lg text-xs transition cursor-pointer ${
+                                isPlaying
+                                  ? 'bg-rose-500 text-white animate-pulse'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-amber-400'
+                              }`}
+                            >
+                              {isPlaying ? <Square className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-amber-400" />}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSaveVoice(item.id)}
+                              disabled={isSelected}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold active:scale-95'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span className="text-[10px]">Active</span>
+                                </>
+                              ) : (
+                                <span className="text-[10px]">Set</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5. Telemetry & Acoustic Breakdown Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Audio Pitch</span>
+                      <Sliders className="w-3 h-3 text-amber-500" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-lg font-mono font-bold ${headingText}`}>{activeVoiceMeta.pitch.toFixed(2)}</span>
+                      <span className="text-[10px] ml-1 text-slate-500 font-mono">Hz eq</span>
+                    </div>
+                    <span className="text-[9px] text-amber-400 font-mono mt-1">Oscillator Tune</span>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Pacing Rate</span>
+                      <Activity className="w-3 h-3 text-sky-400" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-lg font-mono font-bold ${headingText}`}>{activeVoiceMeta.rate.toFixed(2)}x</span>
+                      <span className="text-[10px] ml-1 text-slate-500 font-mono">speed</span>
+                    </div>
+                    <span className="text-[9px] text-sky-400 font-mono mt-1">Temporal Velocity</span>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Accent Locale</span>
+                      <Volume2 className="w-3 h-3 text-emerald-400" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-sm font-mono font-bold truncate block ${headingText}`}>{activeVoiceMeta.locale}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{activeVoiceMeta.gender}</span>
+                    </div>
+                    <span className="text-[9px] text-emerald-400 font-mono mt-1">ITU Regional</span>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Acoustic Core</span>
+                      <AudioLines className="w-3 h-3 text-purple-400" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-xs font-mono font-bold truncate block ${headingText}`}>{activeVoiceMeta.accent.split(' ')[0]}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">SpeechSynthesis</span>
+                    </div>
+                    <span className="text-[9px] text-purple-400 font-mono mt-1">Engine Target</span>
+                  </div>
+                </div>
+
+                {/* 6. Operator Identification Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                  <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${subCardBg}`}>
+                    <User className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <span className={`text-[10px] block ${subText}`}>Operator Name</span>
+                      <span className={`text-xs font-semibold truncate block ${headingText}`}>{user?.name || "operator"}</span>
+                    </div>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${subCardBg}`}>
+                    <Mail className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <span className={`text-[10px] block ${subText}`}>Registered Email</span>
+                      <span className={`text-xs font-semibold font-mono truncate block ${headingText}`}>{user?.email || "operator@atmoscopilot.io"}</span>
+                    </div>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${subCardBg}`}>
+                    <Phone className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <span className={`text-[10px] block ${subText}`}>Mobile Contact</span>
+                      <span className={`text-xs font-semibold font-mono truncate block ${headingText}`}>+91 {formatNativeNumber(user?.phone || "6362324718", lang)}</span>
+                    </div>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${subCardBg}`}>
+                    <Clock className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <span className={`text-[10px] block ${subText}`}>Session Time</span>
+                      <span className={`text-xs font-semibold font-mono truncate block ${headingText}`}>
+                        {user?.lastLoginDate ? `${user.lastLoginDate} • ${user.lastLoginTime}` : "Guest Session • Active"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7. Hardware Geolocation Card */}
+                <div className={`p-3.5 rounded-xl border space-y-1.5 text-xs mb-4 ${subCardBg}`}>
+                  <div className="flex justify-between items-center">
+                    <span className={`text-[11px] ${subText}`}>Hardware Geolocation Lock:</span>
+                    <span className="font-mono text-amber-500 font-semibold text-[11px]">
+                      {coords ? `${coords.lat.toFixed(6)}°N, ${coords.lon.toFixed(6)}°E` : "12.964200°N, 77.558400°E"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className={`text-[11px] ${subText}`}>Resolved Micro-Locality:</span>
+                    <span className={`font-medium text-[11px] ${headingText}`}>{city}</span>
+                  </div>
+                </div>
+
+                {/* 8. Log Out Action */}
+                <div className={`pt-3 border-t ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-500 font-semibold text-xs flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Log Out & Teleport to Login Node</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
