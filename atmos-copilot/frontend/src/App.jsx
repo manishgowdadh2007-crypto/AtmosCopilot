@@ -15,9 +15,6 @@ import ClimateIntelView from './components/home/ClimateIntelView';
 import Header from './components/common/Header';
 import SplashScreen from './components/onboarding/SplashScreen';
 import AuthModal from './components/onboarding/AuthModal';
-import SunAvatar from './components/copilot/SunAvatar';
-import ChatStream from './components/copilot/ChatStream';
-import ChatInput from './components/copilot/ChatInput';
 import { translations, formatNativeNumber } from './utils/translations';
 import { 
   fetchWeatherTelemetry, 
@@ -647,20 +644,16 @@ export default function App() {
         )}
 
         {currentPage === 'copilot' && (
-          <div className="w-full max-w-3xl mx-auto flex flex-col justify-between h-full overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
-            <div className="flex flex-col items-center justify-center pt-3 pb-1 flex-shrink-0">
-              <SunAvatar isListening={isListening} className="w-14 h-14 sm:w-16 sm:h-16" />
-              <h2 className="text-base sm:text-lg font-bold mt-1 text-amber-500">{t.sunCopilot}</h2>
-              <p className={`text-[11px] text-center px-4 ${subText}`}>Streaming verified atmospheric telemetry.</p>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-3">
-              <ChatStream messages={messages} isLoading={isLoading} theme={theme} />
-            </div>
-            <div className={`flex-shrink-0 p-3 sm:p-4 border-t mt-auto backdrop-blur-xl ${
-              theme === 'dark' ? 'bg-[#050811]/95 border-slate-800' : 'bg-white/95 border-slate-200'
-            }`}>
-              <ChatInput onSendMessage={handleSendMessage} isListening={isListening} setIsListening={setIsListening} disabled={isLoading} theme={theme} />
-            </div>
+          <div className="w-full h-full flex-1 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
+            <SunCopilotCockpit
+              weather={weather}
+              coords={coords}
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              isListening={isListening}
+              setIsListening={setIsListening}
+            />
           </div>
         )}
 
