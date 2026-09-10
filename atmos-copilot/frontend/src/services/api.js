@@ -1,5 +1,4 @@
 const BASE_URL = import.meta.env.VITE_BACKEND_URL || "https://atmoscopilot-backend.onrender.com/api";
-const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyBhPlwJkVdXF158wum4Zglst7ALo9xs0gs";
 
 const mapWmoCode = (code) => {
   if (code === 0) return "Clear";
@@ -41,113 +40,28 @@ export const fetchIPFallbackLocation = async () => {
   return { lat: 12.9716, lon: 77.5946, city: "Bengaluru, Karnataka" };
 };
 
-// 2. High-Precision Micro-Locality Reverse Geocoding (Universal & Dynamic)
-export const reverseGeocodeCoordinates = async (lat, lon) => {
-  const formatLocationLabel = (neighborhood, city, state, country) => {
-    const cleanNeigh = neighborhood?.trim();
-    const cleanCity = city?.trim();
-    const cleanState = state?.trim();
-    const cleanCountry = country?.trim();
-
-    if (cleanNeigh && cleanCity && cleanNeigh.toLowerCase() !== cleanCity.toLowerCase()) {
-      return `${cleanNeigh}, ${cleanCity}`;
-    }
-    if (cleanCity && cleanState && cleanCity.toLowerCase() !== cleanState.toLowerCase()) {
-      return `${cleanCity}, ${cleanState}`;
-    }
-    if (cleanCity && cleanCountry) {
-      return `${cleanCity}, ${cleanCountry}`;
-    }
-    return cleanCity || cleanNeigh || cleanState || `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
-  };
-
-  // Priority 1: Google Maps Client SDK
-  if (typeof window !== 'undefined' && window.google && window.google.maps) {
-    try {
-      const geocoder = new window.google.maps.Geocoder();
-      const response = await geocoder.geocode({ location: { lat, lng: lon } });
-      if (response?.results?.length > 0) {
-        let neighborhood = "", city = "", state = "", country = "";
-
-        for (const res of response.results) {
-          for (const comp of res.address_components) {
-            const types = comp.types;
-            if (!neighborhood && (types.includes("sublocality_level_1") || types.includes("neighborhood") || types.includes("sublocality"))) {
-              neighborhood = comp.long_name;
-            }
-            if (!city && (types.includes("locality") || types.includes("postal_town"))) {
-              city = comp.long_name;
-            }
-            if (!state && types.includes("administrative_area_level_1")) {
-              state = comp.long_name;
-            }
-            if (!country && types.includes("country")) {
-              country = comp.long_name;
-            }
-          }
-          if (city) break;
-        }
-
-        return formatLocationLabel(neighborhood, city, state, country);
-      }
-    } catch (err) {
-      console.warn("Google Maps SDK reverse geocode error:", err);
-    }
-  }
-
-  // Priority 2: Direct Google Maps HTTP Geocoding API
-  const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyBhPlwJkVdXF158wum4Zglst7ALo9xs0gs";
-  if (googleApiKey) {
-    try {
-      const gRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${googleApiKey}`);
-      if (gRes.ok) {
-        const gData = await gRes.json();
-        if (gData.results?.length > 0) {
-          let neighborhood = "", city = "", state = "", country = "";
-
-          for (const res of gData.results) {
-            for (const c of res.address_components) {
-              const types = c.types;
-              if (!neighborhood && (types.includes("sublocality_level_1") || types.includes("neighborhood") || types.includes("sublocality"))) {
-                neighborhood = c.long_name;
-              }
-              if (!city && (types.includes("locality") || types.includes("postal_town"))) {
-                city = c.long_name;
-              }
-              if (!state && types.includes("administrative_area_level_1")) {
-                state = c.long_name;
-              }
-              if (!country && types.includes("country")) {
-                country = c.long_name;
-              }
-            }
-            if (city) break;
-          }
-
-          return formatLocationLabel(neighborhood, city, state, country);
-        }
-      }
-    } catch (e) {
-      console.warn("Google Maps HTTP geocode error:", e);
-    }
-  }
-
-  // Priority 3: BigDataCloud Client Reverse Geocode (Works worldwide without keys)
+// 2. High-Precision Micro-Locality Reverse Geocoding (BigDataCloud Engine)
+export async function reverseGeocodeCoordinates(lat, lon) {
   try {
-    const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
-    if (bdcRes.ok) {
-      const bData = await bdcRes.json();
-      const neighborhood = bData.locality || bData.subPremise || bData.neighbourhood || "";
-      const city = bData.city || bData.principalSubdivision || "";
-      const country = bData.countryName || "";
-      return formatLocationLabel(neighborhood, city, bData.principalSubdivision, country);
+    const res = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const locality = data.locality || data.subLocality || data.city;
+      const district = data.principalSubdivision || data.countryName;
+      if (locality && district) {
+        return `${locality}, ${district}`;
+      }
+      return data.city || data.locality || `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
     }
   } catch (err) {
-    console.warn("BigDataCloud fallback failed:", err);
+    console.warn("BigDataCloud geocoder failed, falling back:", err);
   }
 
+  // Fallback coordinate representation
   return `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
-};
+}
 
 // 3. User Authentication Protocols
 export const requestPhoneOtp = async (phone, purpose) => {
@@ -374,7 +288,7 @@ export const fetchEnvironmentalTelemetry = async (lat, lon) => {
   }
 };
 
-// 6. Dynamic Grounded Telemetry Query (Direct FastAPI Backend + Groq Llama 3.3 70B Core)
+// 6. Dynamic Grounded Telemetry Query
 export const sendAIChatQuery = async (query, lat, lon, weatherData = null) => {
   const BACKEND_BASE = "https://atmoscopilot-backend.onrender.com";
 
@@ -390,7 +304,6 @@ export const sendAIChatQuery = async (query, lat, lon, weatherData = null) => {
     return { reply: data.reply };
   } catch (err) {
     console.warn("Backend AI query fallback:", err);
-    // Instant fallback response if Render backend is waking up from sleep
     const temp = weatherData?.current?.temp ?? 26;
     const cond = weatherData?.current?.condition ?? "Partly Cloudy";
     return {
