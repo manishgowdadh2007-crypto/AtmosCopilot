@@ -743,7 +743,7 @@ export default function App() {
               isLoading={isLoading}
               isListening={isListening}
               setIsListening={setIsListening}
-              activeVoiceId={activeVoiceId}
+              activeVoiceProfile={activeVoiceId}
             />
           </div>
         )}
@@ -917,7 +917,6 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {/* Demo Audio Audition Button */}
                             <button
                               type="button"
                               onClick={() => handleAuditionVoice(item)}
@@ -931,7 +930,6 @@ export default function App() {
                               {isPlaying ? <Square className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-amber-400" />}
                             </button>
 
-                            {/* Commit Voice Change Button */}
                             <button
                               type="button"
                               onClick={() => handleSaveVoice(item.id)}
@@ -958,7 +956,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 5. Telemetry & Acoustic Breakdown Cards (Separate Cards Under Voice) */}
+                {/* 5. Telemetry & Acoustic Breakdown Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
                   <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
                     <div className="flex items-center justify-between">
