@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 
 import SatelliteView from './components/home/SatelliteView';
+import SunCopilotCockpit from './components/copilot/SunCopilotCockpit';
 import EnvironmentalPanel from './components/home/EnvironmentalPanel';
 import AgriAdvisoryView from './components/home/AgriAdvisoryView';
 import RoutePlannerView from './components/home/RoutePlannerView';
