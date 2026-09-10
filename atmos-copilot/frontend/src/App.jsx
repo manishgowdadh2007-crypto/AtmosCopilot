@@ -88,7 +88,7 @@ export default function App() {
   // Acoustic Voice Synthesizer States
   const [activeVoiceId, setActiveVoiceId] = useState(() => localStorage.getItem('atmos_voice_id') || 'in-female');
   const [auditioningId, setAuditioningId] = useState(null);
-  const [isVocalizingTelemetry, setIsVocalizingTelemetry] = useState(false);
+  const [speakingTab, setSpeakingTab] = useState(null);
 
   const activeVoiceMeta = VOICE_CATALOG.find((v) => v.id === activeVoiceId) || VOICE_CATALOG[0];
 
@@ -126,6 +126,40 @@ export default function App() {
   const handleSaveVoice = (voiceId) => {
     setActiveVoiceId(voiceId);
     localStorage.setItem('atmos_voice_id', voiceId);
+  };
+
+  const speakTabBriefing = (tabKey, scriptText) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    if (speakingTab === tabKey) {
+      window.speechSynthesis.cancel();
+      setSpeakingTab(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    setSpeakingTab(tabKey);
+
+    const clean = scriptText.replace(/[*#_`]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    const voices = window.speechSynthesis.getVoices();
+
+    const currentVoiceMeta = VOICE_CATALOG.find((v) => v.id === activeVoiceId) || VOICE_CATALOG[0];
+    const matchingVoices = voices.filter((v) => v.lang.replace('_', '-').includes(currentVoiceMeta.locale));
+
+    if (currentVoiceMeta.gender === 'Female') {
+      utterance.voice = matchingVoices.find((v) => /female|zira|samantha|veena|heera|neerja|google.*hindi/i.test(v.name)) || matchingVoices[0];
+    } else {
+      utterance.voice = matchingVoices.find((v) => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matchingVoices[0];
+    }
+
+    utterance.pitch = currentVoiceMeta.pitch;
+    utterance.rate = currentVoiceMeta.rate;
+
+    utterance.onend = () => setSpeakingTab(null);
+    utterance.onerror = () => setSpeakingTab(null);
+
+    window.speechSynthesis.speak(utterance);
   };
 
   const [weather, setWeather] = useState({
@@ -171,41 +205,6 @@ export default function App() {
 
   const t = translations[lang] || translations.en;
   const city = weather?.resolved_city || (isLocating ? t.acquiring : "Current Location");
-
-  // Synchronized vocal broadcast using the selected voice profile
-  const broadcastTelemetryVocally = () => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    if (isVocalizingTelemetry) {
-      window.speechSynthesis.cancel();
-      setIsVocalizingTelemetry(false);
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    setIsVocalizingTelemetry(true);
-
-    const summaryText = `Station report for ${city}. Current temperature is ${cur.temp} degrees Celsius with ${cur.condition}. Humidity is ${cur.humidity} percent, and wind velocity is ${cur.wind} kilometers per hour.`;
-    const utterance = new SpeechSynthesisUtterance(summaryText);
-    const voices = window.speechSynthesis.getVoices();
-
-    const currentVoiceMeta = VOICE_CATALOG.find((v) => v.id === activeVoiceId) || VOICE_CATALOG[0];
-    const matchingVoices = voices.filter((v) => v.lang.replace('_', '-').includes(currentVoiceMeta.locale));
-
-    if (currentVoiceMeta.gender === 'Female') {
-      utterance.voice = matchingVoices.find((v) => /female|zira|samantha|veena|heera|neerja|google.*hindi/i.test(v.name)) || matchingVoices[0];
-    } else {
-      utterance.voice = matchingVoices.find((v) => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matchingVoices[0];
-    }
-
-    utterance.pitch = currentVoiceMeta.pitch;
-    utterance.rate = currentVoiceMeta.rate;
-
-    utterance.onend = () => setIsVocalizingTelemetry(false);
-    utterance.onerror = () => setIsVocalizingTelemetry(false);
-
-    window.speechSynthesis.speak(utterance);
-  };
 
   const [envData, setEnvData] = useState({
     aqi: { value: 36, status: "Good", color: "emerald", pm25: 11, pm10: 15 },
@@ -568,18 +567,21 @@ export default function App() {
                             {t.liveTelemetryFeed}
                           </span>
 
-                          {/* Live Audio Vocalize Broadcast Button (Synced with Settings) */}
+                          {/* Live Audio Vocalize Broadcast Button */}
                           <button
                             type="button"
-                            onClick={broadcastTelemetryVocally}
+                            onClick={() => {
+                              const vocalSummary = `Station report for ${city}. Current temperature is ${cur.temp} degrees Celsius with ${cur.condition}. Humidity is ${cur.humidity} percent, and wind velocity is ${cur.wind} kilometers per hour.`;
+                              speakTabBriefing('observatory', vocalSummary);
+                            }}
                             title={`Broadcast with ${activeVoiceMeta.name}`}
                             className={`ml-1 text-[10px] font-mono border px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer ${
-                              isVocalizingTelemetry
+                              speakingTab === 'observatory'
                                 ? 'bg-amber-500 text-slate-950 border-amber-400 animate-pulse font-bold'
                                 : 'text-amber-400 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20'
                             }`}
                           >
-                            {isVocalizingTelemetry ? (
+                            {speakingTab === 'observatory' ? (
                               <>
                                 <Square className="w-2.5 h-2.5 fill-slate-950" />
                                 <span>Halt Vocal</span>
@@ -629,10 +631,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4 Corner Met Cards - Standardized Heights, Padding, and Alignment */}
+                {/* 4 Corner Met Cards */}
                 <div className="grid grid-cols-2 gap-4">
-                  
-                  {/* Wind Velocity */}
                   <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
                       {t.windVelocity}
@@ -648,7 +648,6 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Relative Humidity */}
                   <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
                       {t.relativeHumidity}
@@ -664,7 +663,6 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Precipitation Probability */}
                   <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
                       {t.precipitation}
@@ -680,7 +678,6 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Dew Point */}
                   <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
                     <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
                       {t.dewPoint}
@@ -695,7 +692,6 @@ export default function App() {
                       {t.baseline}
                     </span>
                   </div>
-
                 </div>
               </div>
 
@@ -843,11 +839,56 @@ export default function App() {
           </div>
         )}
 
-        {currentPage === 'agri' && <AgriAdvisoryView coords={coords} weather={weather} theme={theme} />}
-        {currentPage === 'routes' && <RoutePlannerView coords={coords} weather={weather} lang={lang} theme={theme} />}
-        {currentPage === 'disaster' && <DisasterView coords={coords} weather={weather} theme={theme} />}
-        {currentPage === 'climate' && <ClimateIntelView coords={coords} weather={weather} theme={theme} />}
+        {/* Agri Advisory */}
+        {currentPage === 'agri' && (
+          <AgriAdvisoryView 
+            coords={coords} 
+            weather={weather} 
+            theme={theme}
+            onVocalize={(text) => speakTabBriefing('agri', text)}
+            isSpeaking={speakingTab === 'agri'}
+            voiceMeta={activeVoiceMeta}
+          />
+        )}
 
+        {/* Route Planner */}
+        {currentPage === 'routes' && (
+          <RoutePlannerView 
+            coords={coords} 
+            weather={weather} 
+            lang={lang} 
+            theme={theme}
+            onVocalize={(text) => speakTabBriefing('routes', text)}
+            isSpeaking={speakingTab === 'routes'}
+            voiceMeta={activeVoiceMeta}
+          />
+        )}
+
+        {/* Disaster Warning */}
+        {currentPage === 'disaster' && (
+          <DisasterView 
+            coords={coords} 
+            weather={weather} 
+            theme={theme}
+            onVocalize={(text) => speakTabBriefing('disaster', text)}
+            isSpeaking={speakingTab === 'disaster'}
+            voiceMeta={activeVoiceMeta}
+          />
+        )}
+
+        {/* Climate Intel */}
+        {currentPage === 'climate' && (
+          <ClimateIntelView 
+            coords={coords} 
+            weather={weather} 
+            theme={theme}
+            onVocalize={(text) => speakTabBriefing('climate', text)}
+            isSpeaking={speakingTab === 'climate'}
+            voiceMeta={activeVoiceMeta}
+          />
+        )}
+
+        {/* Alerts & Advisories View */}
         {currentPage === 'alerts' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-4xl mx-auto">
@@ -858,8 +899,25 @@ export default function App() {
                       <Bell className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>{t.meteorologicalAdvisoriesAlerts}</h2>
-                      <p className={`text-xs ${subText}`}>{t.activeRegionalObservations} {city}</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>{t.meteorologicalAdvisoriesAlerts}</h2>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const alertScript = `Active meteorological advisory for ${city}. Surface rain risk index is nominal. Precipitation probability is currently at ${cur.precipitation} percent. No extreme atmospheric anomalies detected.`;
+                            speakTabBriefing('alerts', alertScript);
+                          }}
+                          className={`text-[10px] font-mono border px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer ${
+                            speakingTab === 'alerts'
+                              ? 'bg-rose-500 text-white border-rose-400 animate-pulse font-bold'
+                              : 'text-rose-400 border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20'
+                          }`}
+                        >
+                          {speakingTab === 'alerts' ? <Square className="w-2.5 h-2.5 fill-white" /> : <Volume2 className="w-3 h-3" />}
+                          <span>{speakingTab === 'alerts' ? "Stop" : "Vocalize Briefing"}</span>
+                        </button>
+                      </div>
+                      <p className={`text-xs mt-0.5 ${subText}`}>{t.activeRegionalObservations} {city}</p>
                     </div>
                   </div>
                 </div>
@@ -1012,7 +1070,6 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {/* Demo Audio Audition Button */}
                             <button
                               type="button"
                               onClick={() => handleAuditionVoice(item)}
@@ -1026,7 +1083,6 @@ export default function App() {
                               {isPlaying ? <Square className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-amber-400" />}
                             </button>
 
-                            {/* Commit Voice Change Button */}
                             <button
                               type="button"
                               onClick={() => handleSaveVoice(item.id)}
