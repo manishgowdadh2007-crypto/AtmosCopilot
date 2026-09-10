@@ -519,34 +519,53 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
             <div className="max-w-7xl mx-auto space-y-6">
               
-              {/* Station Banner & Met Matrix */}
+              {/* Station Banner & Met Matrix with Voice Readout + Aligned Cards */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-xs uppercase tracking-widest text-amber-500 font-semibold font-mono">
-                          {t.liveTelemetryFeed}
-                        </span>
-                        <button
-                          onClick={acquireAccuratePosition}
-                          className="ml-2 text-[10px] text-amber-500 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition cursor-pointer"
-                        >
-                          {isLocating ? t.readingGps : t.refreshGps}
-                        </button>
-                      </div>
-                      <h2 className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight ${headingText}`}>{city}</h2>
-                      <p className={`text-xs mt-0.5 font-mono ${subText}`}>
-                        {t.hardwareGps}: {coords ? `${formatNativeNumber(coords.lat.toFixed(4), lang)}°N, ${formatNativeNumber(coords.lon.toFixed(4), lang)}°E` : t.acquiring}
-                      </p>
-                    </div>
+                
+                {/* Main Station Banner Card */}
+                <div className={`lg:col-span-2 border rounded-3xl p-6 backdrop-blur-xl flex flex-col justify-between ${cardBg}`}>
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-xs uppercase tracking-widest text-amber-500 font-semibold font-mono">
+                            {t.liveTelemetryFeed}
+                          </span>
 
-                    <div className="flex flex-col items-end">
-                      <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
-                      <span className="text-xs font-mono font-bold text-amber-500 mt-2 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">
-                        {currentTime}
-                      </span>
+                          {/* Live Audio Vocalize Broadcast Button */}
+                          <button
+                            onClick={() => {
+                              const vocalSummary = `Station report for ${city}. Current temperature is ${cur.temp} degrees Celsius with ${cur.condition}. Humidity is ${cur.humidity} percent, and wind velocity is ${cur.wind} kilometers per hour.`;
+                              handleAuditionVoice({ sample: vocalSummary, locale: activeVoiceMeta.locale, gender: activeVoiceMeta.gender, pitch: activeVoiceMeta.pitch, rate: activeVoiceMeta.rate, id: 'station-broadcast' });
+                            }}
+                            title="Broadcast Station Telemetry"
+                            className="ml-1 text-[10px] text-amber-400 font-mono border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-md hover:bg-amber-500/20 transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Volume2 className="w-3 h-3 text-amber-400" />
+                            <span>Vocalize</span>
+                          </button>
+
+                          <button
+                            onClick={acquireAccuratePosition}
+                            className="text-[10px] text-amber-500 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition cursor-pointer"
+                          >
+                            {isLocating ? t.readingGps : t.refreshGps}
+                          </button>
+                        </div>
+
+                        <h2 className={`text-2xl sm:text-3xl font-bold mt-2 tracking-tight ${headingText}`}>{city}</h2>
+                        <p className={`text-xs mt-0.5 font-mono ${subText}`}>
+                          {t.hardwareGps}: {coords ? `${formatNativeNumber(coords.lat.toFixed(4), lang)}°N, ${formatNativeNumber(coords.lon.toFixed(4), lang)}°E` : t.acquiring}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-end flex-shrink-0">
+                        <span className="text-5xl sm:text-6xl drop-shadow-lg">{renderWeatherSymbol(cur.condition)}</span>
+                        <span className="text-xs font-mono font-bold text-amber-500 mt-2 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                          {currentTime}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -564,43 +583,73 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4 Corner Met Cards */}
+                {/* 4 Corner Met Cards - Standardized Heights, Padding, and Alignment */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
-                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.windVelocity}</span>
-                    <div className="my-2">
-                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.wind, lang)}</span>
-                      <span className={`text-xs ml-1 ${subText}`}>km/h</span>
+                  
+                  {/* Wind Velocity */}
+                  <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
+                      {t.windVelocity}
+                    </span>
+                    <div className="my-auto flex items-baseline">
+                      <span className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight leading-none ${headingText}`}>
+                        {formatNativeNumber(cur.wind, lang)}
+                      </span>
+                      <span className={`text-xs ml-1.5 font-mono ${subText}`}>km/h</span>
                     </div>
-                    <span className="text-[11px] text-emerald-500 font-medium">{t.surfaceVector}</span>
+                    <span className="text-[11px] text-emerald-400 font-medium tracking-wide block">
+                      {t.surfaceVector}
+                    </span>
                   </div>
 
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
-                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.relativeHumidity}</span>
-                    <div className="my-2">
-                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.humidity, lang)}</span>
-                      <span className={`text-xs ml-1 ${subText}`}>%</span>
+                  {/* Relative Humidity */}
+                  <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
+                      {t.relativeHumidity}
+                    </span>
+                    <div className="my-auto flex items-baseline">
+                      <span className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight leading-none ${headingText}`}>
+                        {formatNativeNumber(cur.humidity, lang)}
+                      </span>
+                      <span className={`text-xs ml-1.5 font-mono ${subText}`}>%</span>
                     </div>
-                    <span className="text-[11px] text-cyan-500 font-medium">{t.atmosphericMoisture}</span>
+                    <span className="text-[11px] text-cyan-400 font-medium tracking-wide block">
+                      {t.atmosphericMoisture}
+                    </span>
                   </div>
 
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
-                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.precipitation}</span>
-                    <div className="my-2">
-                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.precipitation, lang)}</span>
-                      <span className={`text-xs ml-1 ${subText}`}>%</span>
+                  {/* Precipitation Probability */}
+                  <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
+                      {t.precipitation}
+                    </span>
+                    <div className="my-auto flex items-baseline">
+                      <span className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight leading-none ${headingText}`}>
+                        {formatNativeNumber(cur.precipitation, lang)}
+                      </span>
+                      <span className={`text-xs ml-1.5 font-mono ${subText}`}>%</span>
                     </div>
-                    <span className="text-[11px] text-indigo-500 font-medium">{t.modelProbability}</span>
+                    <span className="text-[11px] text-indigo-400 font-medium tracking-wide block">
+                      {t.modelProbability}
+                    </span>
                   </div>
 
-                  <div className={`border rounded-3xl p-4.5 flex flex-col justify-between backdrop-blur-xl ${cardBg}`}>
-                    <span className={`text-xs uppercase tracking-wider font-mono ${subText}`}>{t.dewPoint}</span>
-                    <div className="my-2">
-                      <span className={`text-2xl sm:text-3xl font-semibold font-mono ${headingText}`}>{formatNativeNumber(cur.dew_point, lang)}</span>
-                      <span className={`text-xs ml-1 ${subText}`}>°C</span>
+                  {/* Dew Point */}
+                  <div className={`border rounded-3xl p-5 flex flex-col justify-between h-[140px] sm:h-[150px] backdrop-blur-xl ${cardBg}`}>
+                    <span className={`text-[11px] uppercase tracking-wider font-mono font-medium block ${subText}`}>
+                      {t.dewPoint}
+                    </span>
+                    <div className="my-auto flex items-baseline">
+                      <span className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight leading-none ${headingText}`}>
+                        {formatNativeNumber(cur.dew_point, lang)}
+                      </span>
+                      <span className={`text-xs ml-1.5 font-mono ${subText}`}>°C</span>
                     </div>
-                    <span className="text-[11px] text-amber-500 font-medium">{t.baseline}</span>
+                    <span className="text-[11px] text-amber-400 font-medium tracking-wide block">
+                      {t.baseline}
+                    </span>
                   </div>
+
                 </div>
               </div>
 
@@ -883,7 +932,7 @@ export default function App() {
                 </div>
 
                 {/* 4. Dedicated Voice Synthesis Selection Card */}
-                <div className={`p-4 rounded-2xl border mb-4 ${subCardBg} space-y-3`}>
+                <div className={`p-4 sm:p-5 rounded-2xl border mb-4 ${subCardBg} space-y-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Mic className="w-4 h-4 text-amber-500" />
