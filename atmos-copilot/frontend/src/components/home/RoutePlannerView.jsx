@@ -8,11 +8,21 @@ import {
   Wind, 
   Eye, 
   CloudRain, 
-  Loader2 
+  Loader2,
+  Volume2,
+  Square
 } from 'lucide-react';
 import { translations, formatNativeNumber } from '../../utils/translations';
 
-export default function RoutePlannerView({ coords, weather, lang = 'en', theme = 'dark' }) {
+export default function RoutePlannerView({ 
+  coords, 
+  weather, 
+  lang = 'en', 
+  theme = 'dark',
+  onVocalize,
+  isSpeaking = false,
+  voiceMeta
+}) {
   const t = translations[lang] || translations.en;
 
   const [origin, setOrigin] = useState(weather?.resolved_city || "IPD Salappa Ward, Bengaluru");
@@ -154,10 +164,33 @@ export default function RoutePlannerView({ coords, weather, lang = 'en', theme =
 
         {/* 1. Header & Location Inputs */}
         <div className={`border rounded-3xl p-6 backdrop-blur-xl space-y-4 ${cardBg}`}>
-          <div className="flex items-center gap-2.5 text-amber-400">
-            <Navigation className="w-5 h-5" />
-            <h2 className="text-xl font-bold tracking-tight">{t.weatherSafeRoutePlanner}</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 text-amber-400">
+              <Navigation className="w-5 h-5" />
+              <h2 className="text-xl font-bold tracking-tight">{t.weatherSafeRoutePlanner}</h2>
+            </div>
+
+            {/* Vocalize Safe Route Trigger */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const script = `Route corridor advisory from ${routeData.startName} to ${routeData.destName}. Overall transit risk is rated ${routeData.overallRisk}. Pavement surface visibility is acceptable with light vector gusts of ${routeData.destWeather.wind} kilometers per hour. Estimated transit time is approximately ${routeData.duration}.`;
+                  onVocalize && onVocalize(script);
+                }}
+                title={voiceMeta?.name ? `Vocalize with ${voiceMeta.name}` : "Vocalize Safe Route"}
+                className={`text-xs font-mono border px-2.5 py-1 rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
+                  isSpeaking 
+                    ? 'bg-amber-500 text-slate-950 font-bold animate-pulse border-amber-400' 
+                    : 'text-amber-400 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20'
+                }`}
+              >
+                {isSpeaking ? <Square className="w-3 h-3 fill-slate-950" /> : <Volume2 className="w-3.5 h-3.5" />}
+                <span>{isSpeaking ? "Stop Vocal" : "Vocalize Safe Route"}</span>
+              </button>
+            </div>
           </div>
+
           <p className="text-xs text-slate-400">{t.routePlannerSubtitle}</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
