@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Bell, AlertTriangle, CloudRain, Wind, History, Trash2, 
   Settings, LogOut, User, Mail, Phone, Clock, ShieldCheck, CheckCircle2,
-  Sun, Moon
+  Sun, Moon, Volume2, Play, Square, Check, Mic, Activity, Sliders, AudioLines 
 } from 'lucide-react';
 
 import SatelliteView from './components/home/SatelliteView';
@@ -24,6 +24,50 @@ import {
   fetchIPFallbackLocation 
 } from './services/api';
 
+// Centralized Voice Definitions with acoustic parameters
+const VOICE_CATALOG = [
+  {
+    id: 'in-female',
+    name: 'Indian English (Female)',
+    locale: 'en-IN',
+    gender: 'Female',
+    pitch: 1.15,
+    rate: 1.0,
+    accent: 'Indo-Aryan Standard',
+    sample: 'Greetings Operator. Sun Copilot feminine synoptic core initialized.'
+  },
+  {
+    id: 'in-male',
+    name: 'Indian English (Male)',
+    locale: 'en-IN',
+    gender: 'Male',
+    pitch: 0.90,
+    rate: 1.0,
+    accent: 'Indo-Aryan Tactical',
+    sample: 'Station online. Sun Copilot Indian male advisory reporting.'
+  },
+  {
+    id: 'us-female',
+    name: 'American English (Female)',
+    locale: 'en-US',
+    gender: 'Female',
+    pitch: 1.0,
+    rate: 1.0,
+    accent: 'General American Natural',
+    sample: 'Hello Operator. Sun Copilot standard defense telemetry synchronized.'
+  },
+  {
+    id: 'us-male',
+    name: 'American English (Male)',
+    locale: 'en-US',
+    gender: 'Male',
+    pitch: 0.85,
+    rate: 0.98,
+    accent: 'General American Low',
+    sample: 'Terminal lock established. Sun Copilot tactical US unit active.'
+  }
+];
+
 export default function App() {
   const savedUser = (() => {
     try {
@@ -40,6 +84,48 @@ export default function App() {
   });
   const [currentPage, setCurrentPage] = useState('home');
   const [coords, setCoords] = useState(null);
+
+  // Acoustic Voice Synthesizer States
+  const [activeVoiceId, setActiveVoiceId] = useState(() => localStorage.getItem('atmos_voice_id') || 'in-female');
+  const [auditioningId, setAuditioningId] = useState(null);
+
+  const activeVoiceMeta = VOICE_CATALOG.find(v => v.id === activeVoiceId) || VOICE_CATALOG[0];
+
+  const handleAuditionVoice = (voiceItem) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    if (auditioningId === voiceItem.id) {
+      window.speechSynthesis.cancel();
+      setAuditioningId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    setAuditioningId(voiceItem.id);
+
+    const utterance = new SpeechSynthesisUtterance(voiceItem.sample);
+    const voices = window.speechSynthesis.getVoices();
+    
+    const matches = voices.filter(v => v.lang.replace('_', '-').includes(voiceItem.locale));
+    if (voiceItem.gender === 'Female') {
+      utterance.voice = matches.find(v => /female|zira|samantha|veena|heera|neerja/i.test(v.name)) || matches[0];
+    } else {
+      utterance.voice = matches.find(v => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matches[0];
+    }
+
+    utterance.pitch = voiceItem.pitch;
+    utterance.rate = voiceItem.rate;
+
+    utterance.onend = () => setAuditioningId(null);
+    utterance.onerror = () => setAuditioningId(null);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleSaveVoice = (voiceId) => {
+    setActiveVoiceId(voiceId);
+    localStorage.setItem('atmos_voice_id', voiceId);
+  };
 
   const [weather, setWeather] = useState({
     resolved_city: "Locating...",
@@ -190,7 +276,7 @@ export default function App() {
       { 
         enableHighAccuracy: true, 
         timeout: 15000, 
-        maximumAge: 0 // Force fresh reading; never use cached coordinates
+        maximumAge: 0
       }
     );
   };
@@ -389,7 +475,7 @@ export default function App() {
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden font-sans select-none">
       
-      {/* 1. Global Constant Video Background */}
+      {/* Global Background Video */}
       <video
         autoPlay
         loop
@@ -405,14 +491,14 @@ export default function App() {
         <source src="/2611-865412751.mp4" type="video/mp4" />
       </video>
 
-      {/* 2. Glassmorphic Atmosphere Tint */}
+      {/* Atmospheric Blur Tint */}
       <div className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
         theme === 'dark'
           ? 'bg-gradient-to-b from-[#050811]/70 via-[#050811]/35 to-[#050811]/80'
           : 'bg-gradient-to-b from-[#b8c7d9]/50 via-[#cdd8e6]/30 to-[#a8bbce]/60'
       }`} />
 
-      {/* 3. Header Bar */}
+      {/* Header Bar */}
       <div className="relative z-50 flex-shrink-0">
         <Header 
           weather={weather}
@@ -427,7 +513,7 @@ export default function App() {
         />
       </div>
 
-      {/* 4. Main Viewport */}
+      {/* Main Viewport */}
       <main className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden bg-transparent" style={{ height: "calc(100vh - 64px)" }}>
         {currentPage === 'home' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
@@ -445,7 +531,7 @@ export default function App() {
                         </span>
                         <button
                           onClick={acquireAccuratePosition}
-                          className="ml-2 text-[10px] text-amber-500 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition"
+                          className="ml-2 text-[10px] text-amber-500 font-mono border border-amber-500/40 px-2 py-0.5 rounded-md hover:bg-amber-500/10 transition cursor-pointer"
                         >
                           {isLocating ? t.readingGps : t.refreshGps}
                         </button>
@@ -541,7 +627,7 @@ export default function App() {
                       <button
                         key={m.id}
                         onClick={() => setActiveMetric(m.id)}
-                        className={`px-3 py-1.5 text-xs rounded-xl font-medium transition ${
+                        className={`px-3 py-1.5 text-xs rounded-xl font-medium transition cursor-pointer ${
                           activeMetric === m.id
                             ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
                             : 'opacity-70 hover:opacity-100'
@@ -618,7 +704,7 @@ export default function App() {
                       <button
                         key={i}
                         onClick={() => setSelectedDayIndex(i)}
-                        className={`flex flex-col items-center p-3.5 rounded-2xl border backdrop-blur-md transition text-left w-full active:scale-98 ${
+                        className={`flex flex-col items-center p-3.5 rounded-2xl border backdrop-blur-md transition text-left w-full active:scale-98 cursor-pointer ${
                           isSelected
                             ? 'bg-amber-500/20 border-amber-500/50 shadow-lg shadow-amber-500/10 ring-1 ring-amber-400'
                             : subCardBg
@@ -657,6 +743,7 @@ export default function App() {
               isLoading={isLoading}
               isListening={isListening}
               setIsListening={setIsListening}
+              activeVoiceId={activeVoiceId}
             />
           </div>
         )}
@@ -705,7 +792,7 @@ export default function App() {
                     </div>
                   </div>
                   {searchHistory.length > 0 && (
-                    <button onClick={clearHistory} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition">
+                    <button onClick={clearHistory} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition cursor-pointer">
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>{t.clearLog}</span>
                     </button>
@@ -729,58 +816,60 @@ export default function App() {
 
         {currentPage === 'settings' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-transparent">
-            <div className="max-w-3xl mx-auto space-y-6">
+            <div className="max-w-3xl mx-auto space-y-5">
               <div className={`border rounded-3xl p-6 sm:p-8 backdrop-blur-xl space-y-6 ${cardBg}`}>
+                
+                {/* 1. Header Container */}
                 <div className={`flex items-center justify-between border-b pb-5 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500">
                       <Settings className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>{t.systemSettingsHeading}</h2>
-                      <p className={`text-xs ${subText}`}>{t.systemSettingsSubtitle}</p>
+                      <h2 className={`text-lg sm:text-xl font-bold ${headingText}`}>System Settings & Operator Profile</h2>
+                      <p className={`text-xs ${subText}`}>Manage device telemetry, locale, and acoustic synthesizer status</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-mono font-medium">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>{t.authenticated}</span>
+                    <span>AUTHENTICATED</span>
                   </div>
                 </div>
 
-                {/* Display Theme Selector */}
+                {/* 2. Display Theme Selector Card */}
                 <div className={`p-4 rounded-2xl border ${subCardBg}`}>
-                  <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>{t.displayMode}</span>
+                  <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>Display Mode / ಥೀಮ್</span>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => { setTheme('dark'); localStorage.setItem('atmos_theme', 'dark'); }}
-                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition ${
+                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition cursor-pointer ${
                         theme === 'dark' 
                           ? 'bg-amber-500 text-slate-950 font-bold border-amber-500 shadow-md shadow-amber-500/20' 
                           : 'border-slate-700 opacity-70 hover:opacity-100'
                       }`}
                     >
-                      <Moon className="w-4 h-4" /> {t.darkMode}
+                      <Moon className="w-4 h-4" /> Dark Mode
                     </button>
                     <button
                       onClick={() => { setTheme('light'); localStorage.setItem('atmos_theme', 'light'); }}
-                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition ${
+                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition cursor-pointer ${
                         theme === 'light' 
                           ? 'bg-amber-500 text-slate-950 font-bold border-amber-500 shadow-md shadow-amber-500/20' 
                           : 'border-slate-300 opacity-70 hover:opacity-100'
                       }`}
                     >
-                      <Sun className="w-4 h-4" /> {t.lightMode}
+                      <Sun className="w-4 h-4" /> Light Mode
                     </button>
                   </div>
                 </div>
 
-                {/* System Language Selector */}
+                {/* 3. System Language Selector Card */}
                 <div className={`p-4 rounded-2xl border ${subCardBg}`}>
-                  <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>{t.systemLanguage}</span>
+                  <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>System Language / ಭಾಷೆ / भाषा</span>
                   <select
                     value={lang}
                     onChange={(e) => handleLanguageChange(e.target.value)}
-                    className={`w-full text-xs p-2.5 rounded-xl outline-none border focus:border-amber-500 transition ${
+                    className={`w-full text-xs p-3 rounded-xl outline-none border focus:border-amber-500 transition cursor-pointer ${
                       theme === 'dark' 
                         ? 'bg-[#0d1322] border-slate-700 text-white' 
                         : 'bg-white border-slate-300 text-slate-900 shadow-sm'
@@ -795,7 +884,132 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* Operator Profile Cards */}
+                {/* 4. Dedicated Voice Synthesis Selection Card */}
+                <div className={`p-4 sm:p-5 rounded-2xl border ${subCardBg} space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Mic className="w-4 h-4 text-amber-500" />
+                      <span className={`text-xs font-bold tracking-tight ${headingText}`}>Sun Copilot Acoustic Synthesizer</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 font-semibold">
+                      ACTIVE: {activeVoiceMeta.gender.toUpperCase()}
+                    </span>
+                  </div>
+                  <p className={`text-[11px] ${subText}`}>
+                    Select an operational voice. Audition the audio sample with the play button prior to committing changes.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {VOICE_CATALOG.map((item) => {
+                      const isSelected = activeVoiceId === item.id;
+                      const isPlaying = auditioningId === item.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-500/60 text-white shadow-md shadow-amber-500/10'
+                              : 'bg-slate-950/40 border-slate-800/80 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold block truncate">{item.name}</span>
+                            <span className={`text-[10px] font-mono block ${subText}`}>{item.accent}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleAuditionVoice(item)}
+                              title="Audition Voice Demo"
+                              className={`p-2 rounded-lg text-xs transition cursor-pointer ${
+                                isPlaying
+                                  ? 'bg-rose-500 text-white animate-pulse'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-amber-400'
+                              }`}
+                            >
+                              {isPlaying ? <Square className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-amber-400" />}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSaveVoice(item.id)}
+                              disabled={isSelected}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold active:scale-95'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span className="text-[10px]">Active</span>
+                                </>
+                              ) : (
+                                <span className="text-[10px]">Set</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5. Separate Metric Telemetry Breakdown Cards Under Voice */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Audio Pitch</span>
+                      <Sliders className="w-3 h-3 text-amber-500" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-lg font-mono font-bold ${headingText}`}>{activeVoiceMeta.pitch.toFixed(2)}</span>
+                      <span className="text-[10px] ml-1 text-slate-500 font-mono">Hz eq</span>
+                    </div>
+                    <span className="text-[9px] text-amber-400 font-mono mt-1">Oscillator Tune</span>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Pacing Rate</span>
+                      <Activity className="w-3 h-3 text-sky-400" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-lg font-mono font-bold ${headingText}`}>{activeVoiceMeta.rate.toFixed(2)}x</span>
+                      <span className="text-[10px] ml-1 text-slate-500 font-mono">speed</span>
+                    </div>
+                    <span className="text-[9px] text-sky-400 font-mono mt-1">Temporal Velocity</span>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Accent Locale</span>
+                      <Volume2 className="w-3 h-3 text-emerald-400" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-sm font-mono font-bold truncate block ${headingText}`}>{activeVoiceMeta.locale}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{activeVoiceMeta.gender}</span>
+                    </div>
+                    <span className="text-[9px] text-emerald-400 font-mono mt-1">ITU Regional</span>
+                  </div>
+
+                  <div className={`p-3 rounded-xl border flex flex-col justify-between ${subCardBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono uppercase ${subText}`}>Acoustic Core</span>
+                      <AudioLines className="w-3 h-3 text-purple-400" />
+                    </div>
+                    <div className="mt-2">
+                      <span className={`text-xs font-mono font-bold truncate block ${headingText}`}>{activeVoiceMeta.accent.split(' ')[0]}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">WebSpeech</span>
+                    </div>
+                    <span className="text-[9px] text-purple-400 font-mono mt-1">Engine Target</span>
+                  </div>
+                </div>
+
+                {/* 6. Operator Profile Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className={`p-4 rounded-2xl border flex items-center gap-3 ${subCardBg}`}>
                     <User className="w-5 h-5 text-amber-500 flex-shrink-0" />
@@ -832,7 +1046,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Geolocation Status */}
+                {/* 7. Hardware Geolocation Card */}
                 <div className={`p-4 rounded-2xl border space-y-2 text-xs ${subCardBg}`}>
                   <div className="flex justify-between items-center">
                     <span className={subText}>{t.hardwareGeolocationLock}</span>
@@ -846,16 +1060,17 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Logout Button */}
+                {/* 8. Logout Button */}
                 <div className={`pt-4 border-t ${theme === 'dark' ? 'border-slate-800' : 'border-slate-200'}`}>
                   <button
                     onClick={handleLogout}
-                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-500 font-semibold text-xs flex items-center justify-center gap-2 transition active:scale-98"
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-500 font-semibold text-xs flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>{t.logOutBtn}</span>
                   </button>
                 </div>
+
               </div>
             </div>
           </div>
