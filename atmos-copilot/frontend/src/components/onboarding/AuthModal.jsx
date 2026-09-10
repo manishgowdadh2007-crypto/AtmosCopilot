@@ -1,207 +1,280 @@
 import React, { useState } from 'react';
-import { Shield, ArrowRight, Lock, Mail, User, Phone, KeyRound, Zap } from 'lucide-react';
-import { registerUser, resetPassword } from '../../services/api';
-
-const API_BASE_URL = "https://atmoscopilot-backend.onrender.com";
+import { ShieldCheck, User, Mail, Phone, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function AuthModal({ onAuthorized, theme = 'dark' }) {
-  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'reset'
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', password: '', newPassword: '' });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  
+  // Registration States
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleGuestBypass = () => {
-    const identifier = formData.email || "operator@atmoscopilot.io";
-    const phone = formData.phone || "6362324718";
-    const guestUser = {
-      name: identifier.includes('@') ? identifier.split('@')[0] : identifier,
-      email: identifier,
-      phone: phone,
-      lastLoginDate: "Guest Session",
-      lastLoginTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-    };
-    localStorage.setItem('atmos_user', JSON.stringify(guestUser));
-    onAuthorized(null, guestUser);
-  };
+  // Login States
+  const [loginIdentifier, setLoginIdentifier] = useState(''); // Email or Mobile
+  const [loginPassword, setLoginPassword] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  // Feedback Notification
+  const [errorNotice, setErrorNotice] = useState('');
+  const [successNotice, setSuccessNotice] = useState('');
 
-    const identifier = formData.email || formData.name;
-    const phone = formData.phone;
-    const password = formData.password;
-
+  // Retrieve user database from storage
+  const getRegisteredUsers = () => {
     try {
-      if (mode === 'register') {
-        const res = await registerUser(formData);
-        onAuthorized(null, res.user);
-      } else if (mode === 'login') {
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identifier, phone, password })
-          });
-
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.detail || "Authentication rejected");
-          }
-
-          const result = await res.json();
-          onAuthorized(null, result.user);
-        } catch (err) {
-          // If backend is sleeping, cold-starting, or throwing Cloudflare CORS proxy errors:
-          console.warn("Backend auth unavailable, initializing local session:", err);
-
-          // Graceful fallback so users are never trapped on a dead modal:
-          const localUser = {
-            name: identifier.includes('@') ? identifier.split('@')[0] : (identifier || "Operator"),
-            email: identifier,
-            phone: phone,
-            lastLoginDate: "Local Recovery",
-            lastLoginTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-          };
-          localStorage.setItem('atmos_user', JSON.stringify(localUser));
-          onAuthorized(null, localUser);
-        }
-      } else if (mode === 'reset') {
-        await resetPassword({ identifier: formData.email, phone: formData.phone, new_password: formData.newPassword });
-        setMode('login');
-      }
-    } catch (err) {
-      setError(err.message || "Operation failed.");
-    } finally {
-      setLoading(false);
+      const stored = localStorage.getItem('atmos_user_registry');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
     }
   };
 
+  const handleRegister = (e) => {
+    e.preventDefault();
+    setErrorNotice('');
+    setSuccessNotice('');
+
+    if (!name.trim() || !email.trim() || !phone.trim() || !password.trim()) {
+      setErrorNotice('All credentials (Name, Mobile, Email, Password) are mandatory.');
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim().replace(/\D/g, '');
+    const users = getRegisteredUsers();
+
+    // Check whether user credentials match existing registered records
+    const duplicate = users.find(
+      (u) => u.email.toLowerCase() === cleanEmail || u.phone.replace(/\D/g, '') === cleanPhone
+    );
+
+    if (duplicate) {
+      setErrorNotice('Account already exists with this Email or Mobile Number. Please Log In.');
+      return;
+    }
+
+    const now = new Date();
+    const newUser = {
+      id: 'opr_' + Date.now(),
+      name: name.trim(),
+      email: cleanEmail,
+      phone: cleanPhone,
+      password: password, // For client-side storage demo
+      lastLoginDate: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      lastLoginTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    };
+
+    const updatedRegistry = [...users, newUser];
+    localStorage.setItem('atmos_user_registry', JSON.stringify(updatedRegistry));
+
+    setSuccessNotice('Registration verified. Teleporting to AtmosCopilot node...');
+    setTimeout(() => {
+      onAuthorized(null, newUser);
+    }, 600);
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    setErrorNotice('');
+    setSuccessNotice('');
+
+    if (!loginIdentifier.trim() || !loginPassword.trim()) {
+      setErrorNotice('Please provide your registered Email or Mobile and Password.');
+      return;
+    }
+
+    const cleanId = loginIdentifier.trim().toLowerCase();
+    const cleanPhone = loginIdentifier.trim().replace(/\D/g, '');
+    const users = getRegisteredUsers();
+
+    // Find registered account matching either Email or Mobile
+    const matchedUser = users.find(
+      (u) => u.email.toLowerCase() === cleanId || (cleanPhone.length > 5 && u.phone.replace(/\D/g, '') === cleanPhone)
+    );
+
+    if (!matchedUser) {
+      setErrorNotice('No registered operator found matching these details. Please Register first.');
+      return;
+    }
+
+    // Verify Password
+    if (matchedUser.password !== loginPassword) {
+      setErrorNotice('Invalid password authorization. Credentials do not match.');
+      return;
+    }
+
+    const now = new Date();
+    const authenticatedUser = {
+      ...matchedUser,
+      lastLoginDate: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      lastLoginTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    };
+
+    setSuccessNotice('Operator Authenticated. Connecting to telemetry grid...');
+    setTimeout(() => {
+      onAuthorized(null, authenticatedUser);
+    }, 500);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl">
-      <div className="w-full max-w-md">
-        <div className={`relative p-8 rounded-3xl border shadow-2xl backdrop-blur-2xl overflow-hidden ${
-          theme === 'dark' 
-            ? 'bg-[#0b1120]/90 border-slate-700/60 text-white' 
-            : 'bg-white/90 border-slate-300 text-slate-900 shadow-slate-900/20'
-        }`}>
-          <div className="text-center space-y-2 mb-6">
-            <div className="inline-flex p-3 rounded-2xl bg-amber-500/15 text-amber-400 border border-amber-500/30">
-              <Shield className="w-7 h-7" />
-            </div>
-            <h2 className="text-2xl font-black tracking-tight">
-              {mode === 'login' && "Operator Authentication"}
-              {mode === 'register' && "Initialize Terminal Node"}
-              {mode === 'reset' && "Recover Security Credentials"}
-            </h2>
-            <p className="text-xs opacity-60">AtmosCopilot Meteorological Defense Gateway</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050811]/90 backdrop-blur-xl">
+      <div className="w-full max-w-md rounded-3xl border border-slate-700/60 bg-[#0d1322]/95 p-6 sm:p-8 shadow-2xl relative">
+        
+        {/* Header Badge */}
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-3">
+            <ShieldCheck className="w-6 h-6" />
           </div>
+          <h2 className="text-xl font-bold text-white tracking-tight">
+            {mode === 'login' ? 'Operator Authentication Node' : 'Register Operator Terminal'}
+          </h2>
+          <p className="text-xs text-slate-400 mt-1 font-mono">
+            {mode === 'login' ? 'Enter verified credentials to access live core' : 'Create new operator credentials'}
+          </p>
+        </div>
 
-          {error && (
-            <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs text-center font-mono">
-              {error}
-            </div>
-          )}
+        {/* Error / Success Notifications */}
+        {errorNotice && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{errorNotice}</span>
+          </div>
+        )}
 
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            {mode === 'register' && (
-              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700/60 bg-[#060a14]/60">
-                <User className="w-4 h-4 text-amber-400" />
+        {successNotice && (
+          <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+            <span>{successNotice}</span>
+          </div>
+        )}
+
+        {/* Mode Switcher Tabs */}
+        <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-900 border border-slate-800 mb-5 text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => { setMode('login'); setErrorNotice(''); }}
+            className={`py-2 rounded-xl transition ${mode === 'login' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('register'); setErrorNotice(''); }}
+            className={`py-2 rounded-xl transition ${mode === 'register' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+          >
+            Register
+          </button>
+        </div>
+
+        {/* Login Form */}
+        {mode === 'login' && (
+          <form onSubmit={handleLogin} className="space-y-3.5">
+            <div>
+              <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Email or Mobile Number</label>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700 bg-slate-950/60 focus-within:border-amber-500 transition">
+                <Mail className="w-4 h-4 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Operator Full Name"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="bg-transparent text-xs outline-none w-full font-medium"
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
+                  placeholder="e.g. operator@atmos.io or 6362324718"
+                  className="bg-transparent text-xs text-white outline-none w-full"
                 />
               </div>
-            )}
-
-            <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700/60 bg-[#060a14]/60">
-              <Mail className="w-4 h-4 text-amber-400" />
-              <input
-                type="email"
-                placeholder="Station Email"
-                required
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="bg-transparent text-xs outline-none w-full font-medium"
-              />
             </div>
 
-            <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700/60 bg-[#060a14]/60">
-              <Phone className="w-4 h-4 text-amber-400" />
-              <input
-                type="tel"
-                placeholder="Registered 10-Digit Mobile"
-                required
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="bg-transparent text-xs outline-none w-full font-medium"
-              />
+            <div>
+              <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Security Password</label>
+              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700 bg-slate-950/60 focus-within:border-amber-500 transition">
+                <Lock className="w-4 h-4 text-slate-400" />
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-transparent text-xs text-white outline-none w-full"
+                />
+              </div>
             </div>
-
-            {mode !== 'reset' ? (
-              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700/60 bg-[#060a14]/60">
-                <Lock className="w-4 h-4 text-amber-400" />
-                <input
-                  type="password"
-                  placeholder="Terminal Password"
-                  required
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="bg-transparent text-xs outline-none w-full font-medium"
-                />
-              </div>
-            ) : (
-              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-700/60 bg-[#060a14]/60">
-                <KeyRound className="w-4 h-4 text-amber-400" />
-                <input
-                  type="password"
-                  placeholder="New Security Password"
-                  required
-                  value={formData.newPassword}
-                  onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
-                  className="bg-transparent text-xs outline-none w-full font-medium"
-                />
-              </div>
-            )}
 
             <button
-              disabled={loading}
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 transition active:scale-98 cursor-pointer"
+              className="w-full mt-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-98 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <span>{loading ? "Processing..." : mode === 'login' ? "Authorize Station" : mode === 'register' ? "Create Node" : "Reset Credentials"}</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Authenticate & Teleport</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </form>
+        )}
 
-          {/* Instant Local Demo / Guest Bypass Action */}
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex flex-col items-center">
+        {/* Registration Form */}
+        {mode === 'register' && (
+          <form onSubmit={handleRegister} className="space-y-3">
+            <div>
+              <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Operator Full Name</label>
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-700 bg-slate-950/60 focus-within:border-amber-500 transition">
+                <User className="w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Commander Apex"
+                  className="bg-transparent text-xs text-white outline-none w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Mobile Contact Number</label>
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-700 bg-slate-950/60 focus-within:border-amber-500 transition">
+                <Phone className="w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. +91 6362324718"
+                  className="bg-transparent text-xs text-white outline-none w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Registered Operator Email</label>
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-700 bg-slate-950/60 focus-within:border-amber-500 transition">
+                <Mail className="w-4 h-4 text-slate-400" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="operator@atmoscopilot.io"
+                  className="bg-transparent text-xs text-white outline-none w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Set Password</label>
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-700 bg-slate-950/60 focus-within:border-amber-500 transition">
+                <Lock className="w-4 h-4 text-slate-400" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-transparent text-xs text-white outline-none w-full"
+                />
+              </div>
+            </div>
+
             <button
-              type="button"
-              onClick={handleGuestBypass}
-              className="w-full py-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-500/30 text-amber-400 font-mono text-xs font-semibold tracking-wider transition-all duration-200 hover:border-amber-400 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+              type="submit"
+              className="w-full mt-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-98 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-              <span>Instant Station Access (Demo Bypass)</span>
+              <span>Register & Enter Gateway</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
-          </div>
+          </form>
+        )}
 
-          <div className="flex items-center justify-between text-[11px] font-mono mt-4 pt-3 border-t border-slate-800">
-            {mode === 'login' ? (
-              <>
-                <button onClick={() => setMode('register')} className="text-amber-400 hover:underline">New Node? Register</button>
-                <button onClick={() => setMode('reset')} className="text-slate-400 hover:underline">Forgot Key?</button>
-              </>
-            ) : (
-              <button onClick={() => setMode('login')} className="text-amber-400 hover:underline mx-auto">Return to Authentication</button>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
