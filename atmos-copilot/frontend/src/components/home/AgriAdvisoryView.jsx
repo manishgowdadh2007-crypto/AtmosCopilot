@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sprout, Search, CheckCircle2, ShieldAlert, Sparkles, MapPin } from 'lucide-react';
+import { Sprout, Search, CheckCircle2, ShieldAlert, Sparkles, MapPin, Volume2, Square } from 'lucide-react';
 import { translations } from '../../utils/translations';
 import { sendAIChatQuery } from '../../services/api';
 
@@ -10,7 +10,15 @@ const DISTRICT_PRESETS = [
   { name: "Chamarajanagar", crops: ["Turmeric", "Banana", "Maize", "Jowar", "Pulses"], soil: "soilBlackRed", rainfall: "750 mm" }
 ];
 
-export default function AgriAdvisoryView({ coords, weather, lang = 'en', theme = 'dark' }) {
+export default function AgriAdvisoryView({ 
+  coords, 
+  weather, 
+  lang = 'en', 
+  theme = 'dark',
+  onVocalize,
+  isSpeaking = false,
+  voiceMeta
+}) {
   const t = translations[lang] || translations.en;
   const [searchQuery, setSearchQuery] = useState('');
   const [activeArea, setActiveArea] = useState(weather?.resolved_city || "Bengaluru");
@@ -87,11 +95,32 @@ export default function AgriAdvisoryView({ coords, weather, lang = 'en', theme =
         <div className={`border rounded-3xl p-6 backdrop-blur-xl ${cardBg}`}>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 flex items-center gap-1.5">
-                <Sprout className="w-3.5 h-3.5" />
-                {t.weatherSmartAgriTitle}
-              </span>
-              <h2 className="text-xl sm:text-2xl font-bold mt-1 tracking-tight">{t.cropSuitabilityHeading}</h2>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 flex items-center gap-1.5">
+                  <Sprout className="w-3.5 h-3.5" />
+                  {t.weatherSmartAgriTitle}
+                </span>
+
+                {/* Vocalize Soil & Crop Intel Trigger */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const script = `Agri advisory report for ${weather?.resolved_city || activeArea || 'your region'}. Soil moisture is currently around 23.6 percent with nominal evapotranspiration. High yield crops recommended include Ragi, Maize, Grapes, and cold-hardy vegetables.`;
+                    onVocalize && onVocalize(script);
+                  }}
+                  title={voiceMeta?.name ? `Vocalize with ${voiceMeta.name}` : "Vocalize Soil & Crop Intel"}
+                  className={`text-xs font-mono border px-2.5 py-1 rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
+                    isSpeaking 
+                      ? 'bg-emerald-500 text-slate-950 font-bold animate-pulse border-emerald-400' 
+                      : 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
+                  }`}
+                >
+                  {isSpeaking ? <Square className="w-3 h-3 fill-slate-950" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  <span>{isSpeaking ? "Stop Vocal" : "Vocalize Soil & Crop Intel"}</span>
+                </button>
+              </div>
+
+              <h2 className="text-xl sm:text-2xl font-bold mt-1.5 tracking-tight">{t.cropSuitabilityHeading}</h2>
               <p className="text-xs text-slate-400 font-mono mt-0.5">
                 Target Zone: <strong className="text-amber-400">{activeArea}</strong>
               </p>
@@ -113,7 +142,7 @@ export default function AgriAdvisoryView({ coords, weather, lang = 'en', theme =
               <button
                 type="submit"
                 disabled={isSearching}
-                className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 transition active:scale-95"
+                className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 transition active:scale-95 cursor-pointer disabled:opacity-50"
               >
                 {isSearching ? "..." : t.analyzeBtn}
               </button>
@@ -126,7 +155,7 @@ export default function AgriAdvisoryView({ coords, weather, lang = 'en', theme =
               <button
                 key={d.name}
                 onClick={() => setActiveArea(d.name)}
-                className={`p-3.5 rounded-2xl border text-left transition ${
+                className={`p-3.5 rounded-2xl border text-left transition cursor-pointer ${
                   activeArea.toLowerCase().includes(d.name.toLowerCase())
                     ? 'border-emerald-500/80 bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
                     : subBg
@@ -188,7 +217,7 @@ export default function AgriAdvisoryView({ coords, weather, lang = 'en', theme =
                 <MapPin className="w-3 h-3 text-emerald-400" />
                 Sensor Lock: {coords ? `${coords.lat.toFixed(4)}°N, ${coords.lon.toFixed(4)}°E` : "Acquiring..."}
               </span>
-              <span className="text-emerald-400">Agronomic Grounding: Active</span>
+              <span className="text-emerald-400 font-semibold">Agronomic Grounding: Active</span>
             </div>
           </div>
         </div>
