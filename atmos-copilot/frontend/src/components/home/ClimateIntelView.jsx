@@ -7,10 +7,19 @@ import {
   Calendar, 
   Clock, 
   BarChart3, 
-  RefreshCw 
+  RefreshCw,
+  Volume2,
+  Square
 } from 'lucide-react';
 
-export default function ClimateIntelView({ coords, weather, theme = 'dark' }) {
+export default function ClimateIntelView({ 
+  coords, 
+  weather, 
+  theme = 'dark',
+  onVocalize,
+  isSpeaking = false,
+  voiceMeta
+}) {
   const [selectedRange, setSelectedRange] = useState('10Y'); // '10Y' | '1Y' | '6M' | '1D' | '1H'
   const [loading, setLoading] = useState(true);
   const [climateData, setClimateData] = useState({
@@ -43,7 +52,7 @@ export default function ClimateIntelView({ coords, weather, theme = 'dark' }) {
           const years = Array.from({ length: 11 }, (_, i) => currentYear - 10 + i);
           labels = years.map(String);
           
-          // Realistic warming progression baseline for Bengaluru/South India
+          // Realistic warming progression baseline for South India
           const baseTemps = [23.8, 24.1, 23.9, 24.4, 24.2, 24.6, 24.5, 24.8, 24.7, 25.1, 25.0];
           points = baseTemps.map(t => parseFloat((t + (lat > 15 ? 1.2 : -0.2)).toFixed(1)));
           mean = (points.reduce((a, b) => a + b, 0) / points.length).toFixed(1);
@@ -139,7 +148,7 @@ export default function ClimateIntelView({ coords, weather, theme = 'dark' }) {
       path += ` C ${cpX},${p0.y} ${cpX},${p1.y} ${p1.x},${p1.y}`;
     }
 
-    const area = `${path} L ${width},${height} L 0 revolutionary L 0,${height} Z`.replace('revolutionary', '');
+    const area = `${path} L ${width},${height} L 0,${height} Z`;
     return { path, area, coords };
   };
 
@@ -154,11 +163,11 @@ export default function ClimateIntelView({ coords, weather, theme = 'dark' }) {
   ];
 
   const cardBg = theme === 'dark' 
-    ? 'bg-[#0d1322]/85 border-slate-700/60 text-white' 
+    ? 'bg-[#0d1322]/85 border-slate-700/60 text-white shadow-2xl' 
     : 'bg-white/90 border-slate-200 text-slate-900 shadow-lg';
 
-  const subCardBg = theme === 'dark'
-    ? 'bg-[#070b16] border-slate-800 text-slate-300'
+  const subCardBg = theme === 'dark' 
+    ? 'bg-[#070b16] border-slate-800 text-slate-300' 
     : 'bg-slate-50 border-slate-200 text-slate-700';
 
   return (
@@ -172,7 +181,27 @@ export default function ClimateIntelView({ coords, weather, theme = 'dark' }) {
               <Calendar className="w-3.5 h-3.5" />
               <span>Historical Weather & Reanalysis Archive</span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight mt-1">Climate Intelligence Matrix</h2>
+            <div className="flex items-center gap-3 flex-wrap mt-1">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Climate Intelligence Matrix</h2>
+
+              {/* Vocalize Decadal Trends Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const script = `Historical Climate Matrix reanalysis for ${city}. Observed mean temperature across ${selectedRange} interval is ${climateData.meanTemp} degrees Celsius with a decadal anomaly of ${climateData.anomaly}. Cumulative precipitation index stands at ${climateData.cumulativePrecip} millimeters.`;
+                  onVocalize && onVocalize(script);
+                }}
+                title={voiceMeta?.name ? `Vocalize with ${voiceMeta.name}` : "Vocalize Decadal Trends"}
+                className={`text-xs font-mono border px-2.5 py-1 rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
+                  isSpeaking 
+                    ? 'bg-sky-500 text-slate-950 font-bold animate-pulse border-sky-400' 
+                    : 'text-sky-400 border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20'
+                }`}
+              >
+                {isSpeaking ? <Square className="w-3 h-3 fill-slate-950" /> : <Volume2 className="w-3.5 h-3.5" />}
+                <span>{isSpeaking ? "Stop Vocal" : "Vocalize Decadal Trends"}</span>
+              </button>
+            </div>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
               Station Lock: {city} ({lat.toFixed(4)}°N, {lon.toFixed(4)}°E)
             </p>
@@ -184,7 +213,7 @@ export default function ClimateIntelView({ coords, weather, theme = 'dark' }) {
               <button
                 key={r.id}
                 onClick={() => setSelectedRange(r.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                   selectedRange === r.id
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-bold'
                     : 'text-slate-400 hover:text-white'
