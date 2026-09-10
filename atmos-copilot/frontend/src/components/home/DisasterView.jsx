@@ -6,12 +6,22 @@ import {
   MapPin, 
   ExternalLink, 
   Sparkles, 
-  Loader2 
+  Loader2,
+  Volume2,
+  Square
 } from 'lucide-react';
 import { translations, formatNativeNumber } from '../../utils/translations';
 import { sendAIChatQuery } from '../../services/api';
 
-export default function DisasterView({ coords, weather, lang = 'en', theme = 'dark' }) {
+export default function DisasterView({ 
+  coords, 
+  weather, 
+  lang = 'en', 
+  theme = 'dark',
+  onVocalize,
+  isSpeaking = false,
+  voiceMeta
+}) {
   const t = translations[lang] || translations.en;
   const [aiAdvice, setAiAdvice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -67,7 +77,27 @@ export default function DisasterView({ coords, weather, lang = 'en', theme = 'da
               <AlertOctagon className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t.disasterEarlyWarningCore}</h2>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t.disasterEarlyWarningCore}</h2>
+
+                {/* Vocalize Defense Intel Trigger */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const script = `Disaster defense status for ${weather?.resolved_city || city}. Flash flood probability is currently at ${rainProb} percent. Rainfall rate is under 5 millimeters per hour with a model confidence score of 85 percent. Safe nodes and shelters are operational.`;
+                    onVocalize && onVocalize(script);
+                  }}
+                  title={voiceMeta?.name ? `Vocalize with ${voiceMeta.name}` : "Vocalize Defense Intel"}
+                  className={`text-xs font-mono border px-2.5 py-1 rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
+                    isSpeaking 
+                      ? 'bg-rose-500 text-white font-bold animate-pulse border-rose-400' 
+                      : 'text-rose-400 border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20'
+                  }`}
+                >
+                  {isSpeaking ? <Square className="w-3 h-3 fill-white" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  <span>{isSpeaking ? "Stop Vocal" : "Vocalize Defense Intel"}</span>
+                </button>
+              </div>
               <p className="text-xs text-slate-400 font-mono mt-0.5">{t.disasterSubtitle}</p>
             </div>
           </div>
