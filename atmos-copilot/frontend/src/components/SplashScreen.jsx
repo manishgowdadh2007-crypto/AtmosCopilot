@@ -1,208 +1,135 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 export default function SplashScreen({ onFinish }) {
-  const [fadingOut, setFadingOut] = useState(false);
+  const [fading, setFading] = useState(false);
 
   useEffect(() => {
-    // 1. Audio synthesis at the 1.5s enlargement apex
-    const soundTimer = setTimeout(() => {
-      try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
+    // Play the full luxury reveal animation (approx 3.2 seconds)
+    const timer = setTimeout(() => {
+      setFading(true);
+      setTimeout(onFinish, 600);
+    }, 3200);
 
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(140, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(32, ctx.currentTime + 0.85);
-
-        gain.gain.setValueAtTime(0.001, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.7, ctx.currentTime + 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.9);
-
-        const shimmer = ctx.createOscillator();
-        const shimmerGain = ctx.createGain();
-        shimmer.type = 'triangle';
-        shimmer.frequency.setValueAtTime(580, ctx.currentTime);
-        shimmer.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.25);
-        shimmer.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.7);
-
-        shimmerGain.gain.setValueAtTime(0.001, ctx.currentTime);
-        shimmerGain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.08);
-        shimmerGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.7);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        shimmer.connect(shimmerGain);
-        shimmerGain.connect(ctx.destination);
-
-        osc.start();
-        shimmer.start();
-        osc.stop(ctx.currentTime + 0.95);
-        shimmer.stop(ctx.currentTime + 0.75);
-      } catch (err) {
-        console.warn("Audio autoplay restricted:", err);
-      }
-    }, 1500);
-
-    // 2. Begin fade out at 4.2s
-    const fadeTimer = setTimeout(() => {
-      setFadingOut(true);
-    }, 4200);
-
-    // 3. Dismount and transition to app at 5.0s
-    const exitTimer = setTimeout(() => {
-      if (onFinish) onFinish();
-    }, 5000);
-
-    return () => {
-      clearTimeout(soundTimer);
-      clearTimeout(fadeTimer);
-      clearTimeout(exitTimer);
-    };
+    return () => clearTimeout(timer);
   }, [onFinish]);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 99999,
-        background: '#030712',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        transition: 'opacity 0.8s ease, transform 0.8s ease',
-        opacity: fadingOut ? 0 : 1,
-        transform: fadingOut ? 'scale(1.04)' : 'scale(1)',
-        pointerEvents: fadingOut ? 'none' : 'auto',
-      }}
-    >
-      <style>{`
-        .anim-text-atmos {
-          opacity: 0;
-          transform: translateX(-16px);
-          animation: revealText 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
-        }
-        .anim-badge-copilot {
-          opacity: 0;
-          transform: scale(0.85) translateX(10px);
-          animation: revealBadge 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.7s forwards;
-        }
-        .anim-subtitle {
-          opacity: 0;
-          animation: fadeIn 0.8s ease 1.0s forwards;
-        }
-        .anim-container-box {
-          stroke-dasharray: 1200;
-          stroke-dashoffset: 1200;
-          animation: drawFrame 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
-        }
-        .anim-logo-orbit {
-          opacity: 0;
-          transform-origin: 68px 60px;
-          animation: spinIn 1.1s cubic-bezier(0.16, 1, 0.3, 1) 0.9s forwards, spinLoop 14s linear 2.0s infinite;
-        }
-        .anim-logo-core {
-          opacity: 0;
-          transform-origin: 68px 60px;
-          animation: logoBurst 1.1s cubic-bezier(0.34, 1.56, 0.64, 1) 1.5s forwards;
-        }
-        @keyframes revealText { to { opacity: 1; transform: translateX(0); } }
-        @keyframes revealBadge { to { opacity: 1; transform: scale(1) translateX(0); } }
-        @keyframes fadeIn { to { opacity: 1; } }
-        @keyframes drawFrame { to { stroke-dashoffset: 0; } }
-        @keyframes spinIn {
-          from { opacity: 0; transform: scale(0.3) rotate(-90deg); }
-          to { opacity: 1; transform: scale(1) rotate(0deg); }
-        }
-        @keyframes spinLoop { to { transform: rotate(360deg); } }
-        @keyframes logoBurst {
-          0% { opacity: 0; transform: scale(0.2); }
-          60% { opacity: 1; transform: scale(1.45); }
-          80% { transform: scale(1.15); }
-          100% { opacity: 1; transform: scale(1.25); }
-        }
-      `}</style>
+    <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#080A0E] text-slate-200 overflow-hidden transition-opacity duration-700 ${fading ? 'opacity-0' : 'opacity-100'}`}>
+      
+      {/* Ambient Celestial Glow */}
+      <div className="absolute w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,rgba(43,67,110,0.35)_0%,rgba(8,10,14,0)_70%)] pointer-events-none" />
 
-      <div style={{ width: '100%', maxWidth: '600px' }}>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 540 120"
-          style={{
-            width: '100%',
-            height: 'auto',
-            display: 'block',
-            filter: 'drop-shadow(0 20px 35px rgba(2, 132, 199, 0.3))',
-          }}
-        >
+      {/* Brand Stage */}
+      <div className="relative z-10 flex flex-col items-center">
+        
+        {/* SVG Luxury Emblem */}
+        <svg className="w-36 h-36 drop-shadow-[0_15px_35px_rgba(0,0,0,0.85)]" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <linearGradient id="blockBg" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#0b1120" />
-              <stop offset="50%" stopColor="#0f172a" />
-              <stop offset="100%" stopColor="#020617" />
+            <linearGradient id="splashGoldSheen" x1="20" y1="20" x2="140" y2="140" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#FFF5DF" />
+              <stop offset="35%" stopColor="#DFC184" />
+              <stop offset="70%" stopColor="#AA8440" />
+              <stop offset="100%" stopColor="#EED6A5" />
             </linearGradient>
 
-            <linearGradient id="borderGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.9" />
-              <stop offset="50%" stopColor="#0284c7" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.85" />
+            <linearGradient id="splashGlintGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0)" />
+              <stop offset="50%" stopColor="rgba(255,255,255,0.7)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0)" />
             </linearGradient>
 
-            <linearGradient id="solarGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#fbbf24" />
-              <stop offset="100%" stopColor="#f97316" />
-            </linearGradient>
+            <radialGradient id="splashGlassFill" cx="80" cy="80" r="75" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#141923" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#090B0F" stopOpacity="0.95" />
+            </radialGradient>
 
-            <linearGradient id="streamlineGlow" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#06b6d4" />
-              <stop offset="100%" stopColor="#38bdf8" />
-            </linearGradient>
-
-            <linearGradient id="badgeFill" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#0369a1" />
-              <stop offset="100%" stopColor="#0284c7" />
-            </linearGradient>
-
-            <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
+            <clipPath id="splashClip">
+              <rect x="12" y="12" width="136" height="136" rx="36" />
+            </clipPath>
           </defs>
 
-          <rect className="anim-container-box" x="3" y="3" width="534" height="114" rx="22" ry="22" fill="url(#blockBg)" stroke="url(#borderGlow)" strokeWidth="2" />
-          <text className="anim-text-atmos" x="146" y="73" fontFamily="system-ui, -apple-system, sans-serif" fontSize="40" fontWeight="900" letterSpacing="4" fill="#f8fafc">ATMOS</text>
+          {/* Glass Capsule Outer Container */}
+          <rect 
+            x="12" y="12" width="136" height="136" rx="36" 
+            fill="url(#splashGlassFill)" 
+            stroke="url(#splashGoldSheen)" 
+            strokeWidth="1.5" 
+            className="animate-[drawOutline_2.2s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+            style={{ strokeDasharray: 450, strokeDashoffset: 450 }}
+          />
 
-          <g className="anim-badge-copilot" transform="translate(348, 41)">
-            <rect x="0" y="0" width="168" height="38" rx="10" ry="10" fill="url(#badgeFill)" />
-            <text x="14" y="24" fontFamily="system-ui, -apple-system, sans-serif" fontSize="16" fontWeight="800" letterSpacing="3" fill="#ffffff">COPILOT</text>
-            <circle cx="146" cy="19" r="4.5" fill="#38bdf8" filter="url(#glow)" />
-            <circle cx="146" cy="19" r="3.5" fill="#e0f2fe" />
-          </g>
+          <g clipPath="url(#splashClip)">
+            {/* Concentric Isobar Waves */}
+            <circle 
+              cx="80" cy="80" r="48" 
+              stroke="url(#splashGoldSheen)" strokeWidth="1.2" strokeOpacity="0.35" 
+              className="animate-[drawOutline_2.2s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+              style={{ strokeDasharray: 450, strokeDashoffset: 450 }}
+            />
+            <circle 
+              cx="80" cy="80" r="34" 
+              stroke="url(#splashGoldSheen)" strokeWidth="1.6" strokeOpacity="0.65" strokeDasharray="6 3" 
+              className="animate-[drawOutline_1.8s_cubic-bezier(0.16,1,0.3,1)_0.5s_forwards]"
+              style={{ strokeDasharray: 200, strokeDashoffset: 200 }}
+            />
+            <circle 
+              cx="80" cy="80" r="20" 
+              stroke="url(#splashGoldSheen)" strokeWidth="1.8" 
+              className="animate-[drawOutline_1.8s_cubic-bezier(0.16,1,0.3,1)_0.5s_forwards]"
+              style={{ strokeDasharray: 200, strokeDashoffset: 200 }}
+            />
 
-          <text className="anim-subtitle" x="148" y="93" fontFamily="monospace" fontSize="9" fontWeight="600" letterSpacing="2.8" fill="#64748b">HYPER-LOCAL ATMOSPHERIC INTELLIGENCE</text>
-          <line className="anim-subtitle" x1="126" y1="28" x2="126" y2="92" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" />
+            {/* Compass Diamond Apex */}
+            <g className="animate-[fadeNeedle_1.4s_cubic-bezier(0.16,1,0.3,1)_0.9s_forwards] opacity-0">
+              <polygon points="80,48 85,80 80,75 75,80" fill="url(#splashGoldSheen)" />
+              <polygon points="80,112 85,80 80,85 75,80" fill="#88682D" />
+              <circle cx="80" cy="80" r="3.2" fill="#FFF9ED" />
+            </g>
 
-          <g className="anim-subtitle">
-            <circle cx="68" cy="60" r="42" fill="none" stroke="#38bdf8" strokeOpacity="0.08" strokeWidth="1" />
-            <circle cx="68" cy="60" r="32" fill="none" stroke="#38bdf8" strokeOpacity="0.14" strokeWidth="1" strokeDasharray="3 3" />
-          </g>
-
-          <g className="anim-logo-orbit">
-            <path d="M 40 60 A 28 28 0 1 1 84 78" fill="none" stroke="url(#streamlineGlow)" strokeWidth="3.5" strokeLinecap="round" />
-            <path d="M 88 52 A 22 22 0 0 1 68 82" fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 4" />
-            <circle cx="96" cy="60" r="3.5" fill="#f59e0b" />
-          </g>
-
-          <g className="anim-logo-core">
-            <circle cx="68" cy="60" r="14" fill="url(#solarGlow)" filter="url(#glow)" />
-            <circle cx="68" cy="60" r="14" fill="url(#solarGlow)" />
-            <circle cx="68" cy="60" r="7" fill="#fef08a" />
+            {/* Specular Shimmer Ray */}
+            <rect 
+              x="0" y="0" width="160" height="160" 
+              fill="url(#splashGlintGradient)" 
+              className="animate-[shimmerSweep_1.4s_cubic-bezier(0.4,0,0.2,1)_1.6s_forwards] -translate-x-[150%]"
+              opacity="0.6" 
+              style={{ mixBlendMode: 'overlay' }} 
+            />
           </g>
         </svg>
+
+        {/* Typography Block */}
+        <div className="mt-8 text-center animate-[fadeUpText_1.2s_cubic-bezier(0.16,1,0.3,1)_1.4s_forwards] opacity-0">
+          <div className="text-2xl font-bold tracking-[0.28em] bg-gradient-to-r from-[#FFF6DD] via-[#DFC184] to-[#9E7B3A] bg-clip-text text-transparent uppercase font-serif">
+            AtmosCopilot
+          </div>
+          <div className="text-[10px] tracking-[0.25em] text-slate-400 uppercase mt-2 font-mono">
+            Voice-First Hyper-Local Intelligence
+          </div>
+        </div>
+
+        {/* Tactical Loading Beacons */}
+        <div className="flex gap-2 mt-7">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping delay-150" />
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping delay-300" />
+        </div>
+
       </div>
+
+      <style>{`
+        @keyframes drawOutline {
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes fadeNeedle {
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes shimmerSweep {
+          to { transform: translateX(150%); }
+        }
+        @keyframes fadeUpText {
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
