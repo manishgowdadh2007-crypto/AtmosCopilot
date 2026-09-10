@@ -88,6 +88,7 @@ export default function App() {
   // Acoustic Voice Synthesizer States
   const [activeVoiceId, setActiveVoiceId] = useState(() => localStorage.getItem('atmos_voice_id') || 'in-female');
   const [auditioningId, setAuditioningId] = useState(null);
+  const [isVocalizingTelemetry, setIsVocalizingTelemetry] = useState(false);
 
   const activeVoiceMeta = VOICE_CATALOG.find((v) => v.id === activeVoiceId) || VOICE_CATALOG[0];
 
@@ -106,11 +107,11 @@ export default function App() {
     const utterance = new SpeechSynthesisUtterance(voiceItem.sample);
     const voices = window.speechSynthesis.getVoices();
     
-    const matches = voices.filter((v) => v.lang.replace('_', '-').includes(voiceItem.locale));
+    const matches = voices.filter(v => v.lang.replace('_', '-').includes(voiceItem.locale));
     if (voiceItem.gender === 'Female') {
-      utterance.voice = matches.find((v) => /female|zira|samantha|veena|heera|neerja/i.test(v.name)) || matches[0];
+      utterance.voice = matches.find(v => /female|zira|samantha|veena|heera|neerja/i.test(v.name)) || matches[0];
     } else {
-      utterance.voice = matches.find((v) => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matches[0];
+      utterance.voice = matches.find(v => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matches[0];
     }
 
     utterance.pitch = voiceItem.pitch;
@@ -153,16 +154,64 @@ export default function App() {
     ]
   });
 
-  const [envData, setEnvData] = useState({
-    aqi: { value: 36, status: "Good", color: "emerald", pm25: 11, pm10: 15 },
-    uv: { index: 5.9, risk: "Moderate", burnTime: "35-45 min" },
-    agro: { soilMoisture: "22.6", vpd: "1.43" }
-  });
+  const cur = {
+    temp: weather?.current?.temp ?? 26,
+    condition: weather?.current?.condition ?? "Partly Cloudy",
+    precipitation: weather?.current?.precipitation ?? 0,
+    humidity: weather?.current?.humidity ?? 55,
+    wind: weather?.current?.wind ?? 12,
+    dew_point: weather?.current?.dew_point ?? 16
+  };
 
   const [lang, setLang] = useState(() => localStorage.getItem('atmos_lang') || 'en');
   const [theme, setTheme] = useState(() => localStorage.getItem('atmos_theme') || 'dark');
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
+
+  const t = translations[lang] || translations.en;
+  const city = weather?.resolved_city || (isLocating ? t.acquiring : "Current Location");
+
+  // Synchronized vocal broadcast using the selected voice profile
+  const broadcastTelemetryVocally = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    if (isVocalizingTelemetry) {
+      window.speechSynthesis.cancel();
+      setIsVocalizingTelemetry(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    setIsVocalizingTelemetry(true);
+
+    const summaryText = `Station report for ${city}. Current temperature is ${cur.temp} degrees Celsius with ${cur.condition}. Humidity is ${cur.humidity} percent, and wind velocity is ${cur.wind} kilometers per hour.`;
+    const utterance = new SpeechSynthesisUtterance(summaryText);
+    const voices = window.speechSynthesis.getVoices();
+
+    const currentVoiceMeta = VOICE_CATALOG.find((v) => v.id === activeVoiceId) || VOICE_CATALOG[0];
+    const matchingVoices = voices.filter((v) => v.lang.replace('_', '-').includes(currentVoiceMeta.locale));
+
+    if (currentVoiceMeta.gender === 'Female') {
+      utterance.voice = matchingVoices.find((v) => /female|zira|samantha|veena|heera|neerja|google.*hindi/i.test(v.name)) || matchingVoices[0];
+    } else {
+      utterance.voice = matchingVoices.find((v) => /male|david|george|mark|ravi/i.test(v.name) && !/female/i.test(v.name)) || matchingVoices[0];
+    }
+
+    utterance.pitch = currentVoiceMeta.pitch;
+    utterance.rate = currentVoiceMeta.rate;
+
+    utterance.onend = () => setIsVocalizingTelemetry(false);
+    utterance.onerror = () => setIsVocalizingTelemetry(false);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const [envData, setEnvData] = useState({
+    aqi: { value: 36, status: "Good", color: "emerald", pm25: 11, pm10: 15 },
+    uv: { index: 5.9, risk: "Moderate", burnTime: "35-45 min" },
+    agro: { soilMoisture: "22.6", vpd: "1.43" }
+  });
 
   useEffect(() => {
     const updateLiveClock = () => {
@@ -193,12 +242,9 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeMetric, setActiveMetric] = useState('temp');
-  const [isLocating, setIsLocating] = useState(false);
   const [messages, setMessages] = useState([
     { sender: 'ai', text: 'Hello! I am your hyper-local meteorological intelligence core. How can I assist you with today’s atmosphere?' }
   ]);
-
-  const t = translations[lang] || translations.en;
 
   const handleLanguageChange = (newLang) => {
     setLang(newLang);
@@ -351,17 +397,6 @@ export default function App() {
   if (stage === 'onboarding') {
     return <AuthModal onAuthorized={handleAuthorized} theme={theme} />;
   }
-
-  const cur = {
-    temp: weather?.current?.temp ?? 26,
-    condition: weather?.current?.condition ?? "Partly Cloudy",
-    precipitation: weather?.current?.precipitation ?? 0,
-    humidity: weather?.current?.humidity ?? 55,
-    wind: weather?.current?.wind ?? 12,
-    dew_point: weather?.current?.dew_point ?? 16
-  };
-
-  const city = weather?.resolved_city || (isLocating ? t.acquiring : "Current Location");
 
   const getSelectedDayHourly = () => {
     const rawHourly = weather?.hourly || [];
@@ -533,17 +568,28 @@ export default function App() {
                             {t.liveTelemetryFeed}
                           </span>
 
-                          {/* Live Audio Vocalize Broadcast Button */}
+                          {/* Live Audio Vocalize Broadcast Button (Synced with Settings) */}
                           <button
-                            onClick={() => {
-                              const vocalSummary = `Station report for ${city}. Current temperature is ${cur.temp} degrees Celsius with ${cur.condition}. Humidity is ${cur.humidity} percent, and wind velocity is ${cur.wind} kilometers per hour.`;
-                              handleAuditionVoice({ sample: vocalSummary, locale: activeVoiceMeta.locale, gender: activeVoiceMeta.gender, pitch: activeVoiceMeta.pitch, rate: activeVoiceMeta.rate, id: 'station-broadcast' });
-                            }}
-                            title="Broadcast Station Telemetry"
-                            className="ml-1 text-[10px] text-amber-400 font-mono border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 rounded-md hover:bg-amber-500/20 transition flex items-center gap-1 cursor-pointer"
+                            type="button"
+                            onClick={broadcastTelemetryVocally}
+                            title={`Broadcast with ${activeVoiceMeta.name}`}
+                            className={`ml-1 text-[10px] font-mono border px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer ${
+                              isVocalizingTelemetry
+                                ? 'bg-amber-500 text-slate-950 border-amber-400 animate-pulse font-bold'
+                                : 'text-amber-400 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20'
+                            }`}
                           >
-                            <Volume2 className="w-3 h-3 text-amber-400" />
-                            <span>Vocalize</span>
+                            {isVocalizingTelemetry ? (
+                              <>
+                                <Square className="w-2.5 h-2.5 fill-slate-950" />
+                                <span>Halt Vocal</span>
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="w-3 h-3 text-amber-400" />
+                                <span>Vocalize ({activeVoiceMeta.gender[0]})</span>
+                              </>
+                            )}
                           </button>
 
                           <button
@@ -885,7 +931,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 2. Display Mode Card */}
+                {/* 2. Display Theme Selector Card */}
                 <div className={`p-4 rounded-2xl border mb-4 ${subCardBg}`}>
                   <span className={`text-xs font-semibold block mb-2.5 ${headingText}`}>Display Mode / ಥೀಮ್</span>
                   <div className="grid grid-cols-2 gap-3">
@@ -966,6 +1012,7 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {/* Demo Audio Audition Button */}
                             <button
                               type="button"
                               onClick={() => handleAuditionVoice(item)}
@@ -979,6 +1026,7 @@ export default function App() {
                               {isPlaying ? <Square className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-amber-400" />}
                             </button>
 
+                            {/* Commit Voice Change Button */}
                             <button
                               type="button"
                               onClick={() => handleSaveVoice(item.id)}
